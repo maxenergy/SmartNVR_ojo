@@ -48,9 +48,7 @@ private:
 public:
     // static RenderCallback renderCallback;
     rknn_app_context_t app_ctx;
-    // char *rtsp_url = "rtsp://192.168.1.10:554/stream1";
-    char *rtsp_url = "rtsp://192.168.1.159:554/stream1";
-    // char *rtsp_url = "rtsp://192.168.1.155:554/stream1";
+    char *rtsp_url = nullptr; // 移除硬编码的URL
 
     // ZLPlayer(const char *data_source, JNICallbackHelper *helper);
     ZLPlayer(char *modelFileData, int modelDataLen);
@@ -63,6 +61,12 @@ public:
 
     // int process_video_rtsp(rknn_app_context_t *ctx, const char *url);
     void setModelFile(char *data, int dataLen);
+    
+    // 设置RTSP URL
+    void setRtspUrl(const char *url);
+    
+    // 启动RTSP流
+    void startRtspStream();
 
     // void setRenderCallback(RenderCallback renderCallback_);
 

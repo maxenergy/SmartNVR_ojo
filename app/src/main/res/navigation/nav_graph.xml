@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/SettingsFragment">
+
+    <fragment
+        android:id="@+id/CameraUrlFragment"
+        android:name="com.wulala.myyolov5rtspthreadpool.ui.StreamUrlFragment"
+        android:label="@string/second_fragment_label"
+        tools:layout="@layout/fragment_add_stream">
+        <action
+            android:id="@+id/action_cameraUrlToSettings"
+            app:destination="@id/SettingsFragment" />
+    </fragment>
+    <fragment
+        android:id="@+id/SettingsFragment"
+        android:name="com.wulala.myyolov5rtspthreadpool.ui.SettingsFragment"
+        android:label="fragment_settings_item_list"
+        tools:layout="@layout/fragment_settings_item_list" >
+
+        <action
+            android:id="@+id/action_settingsToCameraUrl"
+            app:destination="@id/CameraUrlFragment" />
+        <action
+            android:id="@+id/action_SettingsToInfoFragment"
+            app:destination="@id/infoFragment" />
+    </fragment>
+    <fragment
+        android:id="@+id/infoFragment"
+        android:name="com.wulala.myyolov5rtspthreadpool.ui.InfoFragment"
+        android:label="InfoFragment" />
+</navigation>

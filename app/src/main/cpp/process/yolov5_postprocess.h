@@ -8,7 +8,7 @@
 #define OBJ_NUMB_MAX_SIZE 64
 #define OBJ_CLASS_NUM     80
 #define NMS_THRESH        0.45
-#define BOX_THRESH        0.4
+#define BOX_THRESH        0.5
 #define PROP_BOX_SIZE     (5+OBJ_CLASS_NUM)
 
 namespace yolov5 {

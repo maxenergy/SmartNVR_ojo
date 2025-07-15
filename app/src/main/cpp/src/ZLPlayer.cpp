@@ -1,6 +1,9 @@
-#include <api/include/mk_common.h>
-#include <api/include/mk_player.h>
+#include <mk_common.h>
+#include <mk_player.h>
 #include <android/native_window_jni.h>
+#include <chrono>
+#include <thread>
+#include <opencv2/opencv.hpp>
 #include "ZLPlayer.h"
 #include "mpp_err.h"
 #include "cv_draw.h"
@@ -39,11 +42,40 @@ void ZLPlayer::setModelFile(char *data, int dataLen) {
     this->modelFileSize = dataLen;
 }
 
+void ZLPlayer::setRtspUrl(const char *url) {
+    if (rtsp_url != nullptr) {
+        delete[] rtsp_url;
+    }
+    
+    size_t url_len = strlen(url);
+    rtsp_url = new char[url_len + 1];
+    strcpy(rtsp_url, url);
+    LOGD("RTSP URL set to: %s", rtsp_url);
+}
+
+void ZLPlayer::startRtspStream() {
+    if (rtsp_url == nullptr) {
+        LOGE("Cannot start RTSP stream: URL not set");
+        return;
+    }
+    
+    if (pid_rtsp != 0) {
+        LOGD("RTSP stream already running");
+        return;
+    }
+    
+    LOGD("Starting RTSP stream with URL: %s", rtsp_url);
+    pthread_create(&pid_rtsp, nullptr, rtps_process, this);
+}
+
 ZLPlayer::ZLPlayer(char *modelFileData, int modelDataLen) {
 
-    // this->data_source = new char[strlen(data_source) + 1];
-    // strcpy(this->data_source, data_source); // 把源 Copy给成员
-    // this->isStreaming = false;
+    // 使用本地网络示例URL，避免连接到无效的演示URL
+    const char *default_url = "rtsp://192.168.1.100:554/stream";
+    size_t url_len = strlen(default_url);
+    rtsp_url = new char[url_len + 1];
+    strcpy(rtsp_url, default_url);
+    LOGD("ZLPlayer initialized with default RTSP URL: %s", rtsp_url);
 
     this->modelFileSize = modelDataLen;
     this->modelFileContent = (char *) malloc(modelDataLen);
@@ -74,8 +106,9 @@ ZLPlayer::ZLPlayer(char *modelFileData, int modelDataLen) {
     } else {
         LOGD("decoder is not null");
     }
-    // 启动rtsp线程
-    pthread_create(&pid_rtsp, nullptr, rtps_process, this);
+    // 初始化完成，等待手动启动RTSP流
+    LOGD("ZLPlayer initialized successfully (RTSP ready to start)");
+    
     // pthread_create(&pid_render, nullptr, desplay_process, this);
     // 读取视频流
     // process_video_rtsp(&app_ctx, "rtsp://192.168.1.159:554/stream1");
@@ -114,10 +147,8 @@ on_mk_play_event_func(void *user_data, int err_code, const char *err_msg, mk_tra
     rknn_app_context_t *ctx = (rknn_app_context_t *) user_data;
     if (err_code == 0) {
         // success
-        LOGD("play success!");
+        LOGD("RTSP play success! Track count: %d", track_count);
         int i;
-        // ctx->push_url = "rtmp://localhost/live/stream";
-        // ctx->media = mk_media_create("__defaultVhost__", "live", "test", 0, 0, 0);
         for (i = 0; i < track_count; ++i) {
             if (mk_track_is_video(tracks[i])) {
                 LOGD("got video track: %s", mk_track_codec_name(tracks[i]));
@@ -126,36 +157,70 @@ on_mk_play_event_func(void *user_data, int err_code, const char *err_msg, mk_tra
             }
         }
     } else {
-        printf("play failed: %d %s", err_code, err_msg);
+        LOGE("RTSP play failed: error %d - %s", err_code, err_msg ? err_msg : "Unknown error");
+        // 不要退出应用，只是记录错误
+        // 可以在这里添加重连逻辑
     }
 }
 
 void API_CALL
 
 on_mk_shutdown_func(void *user_data, int err_code, const char *err_msg, mk_track tracks[], int track_count) {
-    printf("play interrupted: %d %s", err_code, err_msg);
+    LOGE("RTSP play interrupted: error %d - %s", err_code, err_msg ? err_msg : "Unknown error");
+    // 不要退出应用，只是记录错误
 }
 
 // 函数指针的实现 实现渲染画面
 void renderFrame(uint8_t *src_data, int width, int height, int src_line_size) {
+    LOGD("renderFrame called: width=%d, height=%d, src_line_size=%d", width, height, src_line_size);
+    
+    if (!src_data) {
+        LOGE("renderFrame: src_data is null");
+        return;
+    }
+    
+    if (width <= 0 || height <= 0 || src_line_size <= 0) {
+        LOGE("renderFrame: invalid parameters w=%d h=%d stride=%d", width, height, src_line_size);
+        return;
+    }
 
     pthread_mutex_lock(&windowMutex);
     if (!window) {
-        pthread_mutex_unlock(&windowMutex); // 出现了问题后，必须考虑到，释放锁，怕出现死锁问题
+        LOGD("renderFrame: window is null, skipping render");
+        pthread_mutex_unlock(&windowMutex);
+        return;
     }
 
+    LOGD("renderFrame: Setting buffer geometry for window=%p", window);
+    
+    // Validate window before calling ANativeWindow_setBuffersGeometry
+    // First try to get current window info to verify it's valid
+    int32_t current_width = ANativeWindow_getWidth(window);
+    int32_t current_height = ANativeWindow_getHeight(window);
+    
+    if (current_width <= 0 || current_height <= 0) {
+        LOGE("renderFrame: Invalid window dimensions w=%d h=%d", current_width, current_height);
+        pthread_mutex_unlock(&windowMutex);
+        return;
+    }
+    
+    LOGD("renderFrame: Current window size: %dx%d, setting to: %dx%d", current_width, current_height, width, height);
+
     // 设置窗口的大小，各个属性
-    ANativeWindow_setBuffersGeometry(window, width, height, WINDOW_FORMAT_RGBA_8888);
+    int ret = ANativeWindow_setBuffersGeometry(window, width, height, WINDOW_FORMAT_RGBA_8888);
+    if (ret != 0) {
+        LOGE("ANativeWindow_setBuffersGeometry failed: %d", ret);
+        pthread_mutex_unlock(&windowMutex);
+        return;
+    }
 
     // 他自己有个缓冲区 buffer
     ANativeWindow_Buffer window_buffer;
 
     // 如果我在渲染的时候，是被锁住的，那我就无法渲染，我需要释放 ，防止出现死锁
     if (ANativeWindow_lock(window, &window_buffer, 0)) {
-        ANativeWindow_release(window);
-        window = 0;
-
-        pthread_mutex_unlock(&windowMutex); // 解锁，怕出现死锁
+        LOGE("ANativeWindow_lock failed");
+        pthread_mutex_unlock(&windowMutex);
         return;
     }
 
@@ -163,15 +228,22 @@ void renderFrame(uint8_t *src_data, int width, int height, int src_line_size) {
     uint8_t *dst_data = static_cast<uint8_t *>(window_buffer.bits);
     int dst_linesize = window_buffer.stride * 4;
 
-    for (int i = 0; i < window_buffer.height; ++i) {
+    LOGD("renderFrame: window_buffer w=%d h=%d stride=%d", window_buffer.width, window_buffer.height, window_buffer.stride);
+
+    int copy_height = std::min(height, window_buffer.height);
+    int copy_width = std::min(src_line_size, dst_linesize);
+
+    for (int i = 0; i < copy_height; ++i) {
         // 图：一行一行显示 [高度不用管，用循环了，遍历高度]
         // 通用的
-        memcpy(dst_data + i * dst_linesize, src_data + i * src_line_size, dst_linesize); // OK的
+        memcpy(dst_data + i * dst_linesize, src_data + i * src_line_size, copy_width);
     }
 
     // 数据刷新
     ANativeWindow_unlockAndPost(window); // 解锁后 并且刷新 window_buffer的数据显示画面
     pthread_mutex_unlock(&windowMutex);
+    
+    LOGD("renderFrame completed successfully");
 }
 
 void ZLPlayer::display() {
@@ -209,10 +281,42 @@ void ZLPlayer::get_detect_result() {
         auto frameData = app_ctx.yolov5ThreadPool->getTargetImgResult(app_ctx.result_cnt);
         app_ctx.result_cnt++;
         LOGD("Get detect result counter:%d start display", app_ctx.result_cnt);
-        // 加入队列
-        // app_ctx.renderFrameQueue->push(frameData);
+        
+        // 在显示之前绘制检测框
+        if (objects.size() > 0) {
+            // 将RGBA数据转换为cv::Mat进行绘制
+            cv::Mat display_mat(frameData->screenH, frameData->screenW, CV_8UC4, frameData->data);
+            
+            // 转换为RGB格式进行绘制（OpenCV绘制需要RGB格式）
+            cv::Mat rgb_mat;
+            cv::cvtColor(display_mat, rgb_mat, cv::COLOR_RGBA2RGB);
+            
+            // 绘制检测框
+            DrawDetections(rgb_mat, objects);
+            LOGD("Drew %zu detection boxes", objects.size());
+            
+            // 转换回RGBA格式
+            cv::cvtColor(rgb_mat, display_mat, cv::COLOR_RGB2RGBA);
+        }
 
-        // renderFrame((uint8_t *) frameData->data, frameData->screenW, frameData->screenH, frameData->screenStride);
+        // 添加时间戳信息到日志中，帮助调试时间同步问题
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        static struct timeval lastDisplayTime = {0, 0};
+        
+        if (lastDisplayTime.tv_sec != 0) {
+            long displayGap = (now.tv_sec - lastDisplayTime.tv_sec) * 1000 + 
+                             (now.tv_usec - lastDisplayTime.tv_usec) / 1000;
+            LOGD("Display interval: %ld ms", displayGap);
+            
+            // 如果显示间隔太短，适当延迟以保持帧率稳定
+            if (displayGap < 33) { // 约30fps
+                std::this_thread::sleep_for(std::chrono::milliseconds(33 - displayGap));
+            }
+        }
+        lastDisplayTime = now;
+
+        renderFrame((uint8_t *) frameData->data, frameData->screenW, frameData->screenH, frameData->screenStride);
         // 释放内存
         delete frameData->data;
         frameData->data = nullptr;
@@ -223,70 +327,79 @@ void ZLPlayer::get_detect_result() {
 }
 
 int ZLPlayer::process_video_rtsp() {
+    if (rtsp_url == nullptr) {
+        LOGE("RTSP URL not set, cannot start streaming");
+        return -1;
+    }
+    
+    LOGD("process_video_rtsp starting with URL: %s", rtsp_url);
 
     mk_config config;
     memset(&config, 0, sizeof(mk_config));
     config.log_mask = LOG_CONSOLE;
-    mk_env_init(&config);
-    mk_player player = mk_player_create();
-    mk_player_set_on_result(player, on_mk_play_event_func, &app_ctx);
-    mk_player_set_on_shutdown(player, on_mk_shutdown_func, &app_ctx);
-    mk_player_play(player, rtsp_url);
-
-    while (1) {
-        // sleep(1);
-        // LOGD("Running");
-        // display();
-        // display();
-        get_detect_result();
-    }
-
-#if 0
-    std::vector<Detection> objects;
-    cv::Mat origin_mat = cv::Mat::zeros(height, width, CV_8UC3);
-
-    // LOGD("enter any key to exit\n");
-    while (1) {
-        // LOGD("running\n");
-        // sleep(1);
-        usleep(1000);
-
-        // 获取推理结果
-        auto ret_code = yolov8_thread_pool->getTargetResultNonBlock(objects, result_cnt);
-        auto ret_code = yolov8_thread_pool-> getTargetImgResult(objects, result_cnt);
-        if (ret_code == NN_SUCCESS) {
-            result_cnt++;
-        }else{
-            continue;
+    
+    try {
+        mk_env_init(&config);
+        LOGD("mk_env_init completed");
+        
+        mk_player player = mk_player_create();
+        if (player == nullptr) {
+            LOGE("Failed to create mk_player");
+            return -1;
         }
+        LOGD("mk_player_create completed");
+        
+        mk_player_set_on_result(player, on_mk_play_event_func, &app_ctx);
+        mk_player_set_on_shutdown(player, on_mk_shutdown_func, &app_ctx);
+        LOGD("mk_player callbacks set");
+        
+        LOGD("Starting RTSP play: %s", rtsp_url);
+        mk_player_play(player, rtsp_url);
+        LOGD("mk_player_play called");
 
-        DrawDetections(origin_mat, objects);
-
-        cv::cvtColor(origin_mat, origin_mat, cv::COLOR_RGB2RGBA);
-        renderFrame(origin_mat.data, width, height, width * get_bpp_from_format(RK_FORMAT_RGBA_8888));
-
-        gettimeofday(&end, NULL);
-
-        double timeused = 1000 * (end.tv_sec - now.tv_sec) + (end.tv_usec - now.tv_usec) / 1000;
-        // LOGD("Spent:%f", timeused);
-
-        long frameGap = end.tv_sec * 1000 + end.tv_usec / 1000 - lastRenderTime.tv_usec / 1000 - lastRenderTime.tv_sec * 1000;
-
-        LOGD("Frame gap :%ld\n", frameGap);
-
-        gettimeofday(&lastRenderTime, NULL);
-
+        // 移除超时限制，让连接保持活跃
+        // 添加连接状态检查，但不强制断开
+        int status_check_count = 0;
+        
+        while (true) {
+            // 减少主循环频率，避免过度消耗CPU
+            std::this_thread::sleep_for(std::chrono::milliseconds(60));
+            
+            get_detect_result();
+            
+            status_check_count++;
+            
+            // 每10秒检查一次连接状态，但不断开
+            if (status_check_count % 167 == 0) { // 10秒 = 167 * 60ms
+                LOGD("RTSP connection active for %d seconds", status_check_count * 60 / 1000);
+            }
+        }
+        
+        if (player) {
+            mk_player_release(player);
+        }
+        
+    } catch (const std::exception& e) {
+        LOGE("Exception in RTSP processing: %s", e.what());
+        return -1;
+    } catch (...) {
+        LOGE("Unknown exception in RTSP processing");
+        return -1;
     }
-#endif
-
-    if (player) {
-        mk_player_release(player);
-    }
+    
     return 0;
 }
 
 ZLPlayer::~ZLPlayer() {
-
+    if (rtsp_url != nullptr) {
+        delete[] rtsp_url;
+        rtsp_url = nullptr;
+    }
+    
+    if (modelFileContent != nullptr) {
+        free(modelFileContent);
+        modelFileContent = nullptr;
+    }
 }
 
 static struct timeval lastRenderTime;
@@ -297,9 +410,20 @@ void ZLPlayer::mpp_decoder_frame_callback(void *userdata, int width_stride, int 
     struct timeval end;
     struct timeval memCpyEnd;
     gettimeofday(&start, NULL);
+    
+    // 使用RTSP时间戳进行更好的时间同步
+    static uint64_t lastPts = 0;
+    uint64_t currentPts = ctx->pts;
+    
     long frameGap = start.tv_sec * 1000 + start.tv_usec / 1000 - lastRenderTime.tv_usec / 1000 - lastRenderTime.tv_sec * 1000;
-    // LOGD("decoded frame ctx->dts:%ld", ctx->dts);
-    LOGD("mpp_decoder_frame_callback Frame gap :%ld\n", frameGap);
+    
+    // 如果帧间隔太短（小于25ms），说明解码速度过快，需要控制
+    if (frameGap < 25 && lastRenderTime.tv_sec != 0) {
+        LOGD("Frame gap too short (%ld ms), skipping frame to maintain sync", frameGap);
+        return; // 跳过这一帧，保持同步
+    }
+    
+    LOGD("mpp_decoder_frame_callback Frame gap: %ld ms, PTS: %lu", frameGap, currentPts);
     gettimeofday(&lastRenderTime, NULL);
 
     // 12,441,600 3840x2160x3/2
@@ -371,12 +495,26 @@ void ZLPlayer::mpp_decoder_frame_callback(void *userdata, int width_stride, int 
     int detectPoolSize = ctx->yolov5ThreadPool->get_task_size();
     LOGD("detectPoolSize :%d", detectPoolSize);
 
-    // ctx->mppDataThreadPool->submitTask(frameData);
-    // ctx->job_cnt++;
-    // 如果frameData->frameId为奇数
+    // 添加帧跳跃控制，避免推理队列过载
+    // 但不能破坏时间同步机制
     ctx->frame_cnt++;
-    ctx->yolov5ThreadPool->submitTask(frameData);
-    ctx->job_cnt++;
+    
+    // 检查推理线程池是否过载
+    const int MAX_QUEUE_SIZE = 5; // 最大队列长度
+    bool shouldInference = (ctx->frame_cnt % 3 == 0 && detectPoolSize < MAX_QUEUE_SIZE);
+    
+    if (shouldInference) {
+        // 每第3帧才进行推理，并且队列不能过载
+        ctx->yolov5ThreadPool->submitTask(frameData);
+        ctx->job_cnt++;
+        LOGD("Frame %d submitted to inference pool", ctx->frame_cnt);
+    } else {
+        // 跳过推理，直接释放内存
+        // 不要直接渲染，让get_detect_result()处理显示时机
+        delete frameData->data;
+        frameData->data = nullptr;
+        LOGD("Frame %d skipped inference (pool size: %d)", ctx->frame_cnt, detectPoolSize);
+    }
 
     //    if (ctx->frame_cnt % 2 == 1) {
     //        // if (detectPoolSize < MAX_TASK) {

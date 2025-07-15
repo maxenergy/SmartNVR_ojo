@@ -13,3 +13,18 @@
 .externalNativeBuild
 .cxx
 local.properties
+temp/
+3rdparty/ffmpeg/share/
+3rdparty/ffmpeg/lib/
+3rdparty/zlmediakit/lib/
+3rdparty/zlmediakit/share/
+
+# Build outputs that may contain large libraries
+app/build/
+app/src/main/jniLibs/
+*.so
+*.a
+
+# Large binary files
+3rdparty/*/lib/
+3rdparty/*/share/
