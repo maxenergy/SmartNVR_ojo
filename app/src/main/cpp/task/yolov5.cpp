@@ -6,6 +6,7 @@
 #include "logging.h"
 #include "preprocess.h"
 #include "yolov5_postprocess.h"
+#include "rknn_engine.h"  // 添加RKEngine头文件
 
 #include <ctime>
 
@@ -269,4 +270,30 @@ nn_error_e Yolov5::Postprocess(const cv::Mat &img, std::vector <Detection> &obje
     letterbox_decode(objects, letterbox_info_.hor, letterbox_info_.pad);
 
     return NN_SUCCESS;
+}
+
+// NPU核心管理方法实现
+void Yolov5::SetNPUCore(int core_id) {
+    if (engine_) {
+        // 将engine_转换为RKEngine指针并设置NPU核心
+        auto rk_engine = std::dynamic_pointer_cast<RKEngine>(engine_);
+        if (rk_engine) {
+            rk_engine->SetNPUCore(core_id);
+            NN_LOG_INFO("Yolov5: NPU Core set to %d", core_id);
+        } else {
+            NN_LOG_ERROR("Yolov5: Failed to cast engine to RKEngine");
+        }
+    } else {
+        NN_LOG_ERROR("Yolov5: Engine not initialized, cannot set NPU core");
+    }
+}
+
+int Yolov5::GetNPUCore() const {
+    if (engine_) {
+        auto rk_engine = std::dynamic_pointer_cast<RKEngine>(engine_);
+        if (rk_engine) {
+            return rk_engine->GetNPUCore();
+        }
+    }
+    return -1; // 返回-1表示获取失败
 }

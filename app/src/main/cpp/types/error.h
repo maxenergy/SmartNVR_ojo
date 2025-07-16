@@ -16,8 +16,9 @@ typedef enum
     NN_RKNN_INPUT_ATTR_ERROR = -8,  // rknn输入数据属性错误
     NN_RKNN_OUTPUT_ATTR_ERROR = -9, // rknn输出数据属性错误
     NN_RKNN_MODEL_NOT_LOAD = -10,   // rknn模型未加载
-    NN_STOPED = -11,                // 程序已停止
-    NN_TIMEOUT = -12,          // 超时
+    NN_RKNN_SET_CORE_FAIL = -11,    // rknn设置NPU核心失败
+    NN_STOPED = -12,                // 程序已停止
+    NN_TIMEOUT = -13,               // 超时
     NN_RESULT_NOT_READY = -13
 } nn_error_e;
 

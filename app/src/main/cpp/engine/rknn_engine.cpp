@@ -3,6 +3,10 @@
 #include "rknn_engine.h"
 
 #include <string.h>
+#include <atomic>
+
+// 静态成员初始化
+std::atomic<int> RKEngine::next_core_id_(0);
 
 #include "engine_helper.h"
 #include "logging.h"
@@ -101,8 +105,17 @@ nn_error_e RKEngine::LoadModelData(char *modelData, int dataSize) {
         NN_LOG_ERROR("rknn_init fail! ret=%d", ret);
         return NN_RKNN_INIT_FAIL; // 返回错误码：初始化rknn context失败
     }
+
+    // 设置NPU核心
+    rknn_core_mask core_mask = static_cast<rknn_core_mask>(1 << npu_core_id_);
+    ret = rknn_set_core_mask(rknn_ctx_, core_mask);
+    if (ret != RKNN_SUCC) {
+        NN_LOG_ERROR("rknn_set_core_mask fail! core_id=%d, ret=%d", npu_core_id_, ret);
+        return NN_RKNN_SET_CORE_FAIL;
+    }
+
     // 打印初始化成功信息
-    NN_LOG_INFO("rknn_init success!");
+    NN_LOG_INFO("rknn_init success! Using NPU Core %d", npu_core_id_);
     ctx_created_ = true;
 
     // 获取rknn版本信息
@@ -240,8 +253,29 @@ nn_error_e RKEngine::Run(std::vector<tensor_data_s> &inputs, std::vector<tensor_
 RKEngine::~RKEngine() {
     if (ctx_created_) {
         rknn_destroy(rknn_ctx_);
-        NN_LOG_INFO("rknn context destroyed!");
+        NN_LOG_INFO("rknn context destroyed! NPU Core %d released", npu_core_id_);
     }
+}
+
+// NPU核心管理方法实现
+void RKEngine::SetNPUCore(int core_id) {
+    if (core_id >= 0 && core_id < 3) {
+        npu_core_id_ = core_id;
+        NN_LOG_INFO("NPU Core set to %d", core_id);
+    } else {
+        NN_LOG_ERROR("Invalid NPU core ID: %d, must be 0-2", core_id);
+    }
+}
+
+int RKEngine::GetNPUCore() const {
+    return npu_core_id_;
+}
+
+int RKEngine::AllocateNextCore() {
+    // 轮询分配NPU核心 (0, 1, 2)
+    int core_id = next_core_id_.fetch_add(1) % 3;
+    NN_LOG_INFO("Auto-allocated NPU Core %d", core_id);
+    return core_id;
 }
 
 // 创建RKNN引擎

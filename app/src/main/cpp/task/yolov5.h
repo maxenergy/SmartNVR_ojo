@@ -18,6 +18,10 @@ public:
     nn_error_e Run(const cv::Mat &img, std::vector <Detection> &objects); // 运行模型
     nn_error_e RunWithFrameData(const std::shared_ptr <frame_data_t> frameData, std::vector <Detection> &objects);
 
+    // NPU核心管理
+    void SetNPUCore(int core_id);                                        // 设置NPU核心
+    int GetNPUCore() const;                                              // 获取当前NPU核心
+
 private:
     nn_error_e Preprocess(const cv::Mat &img, const std::string process_type, cv::Mat &image_letterbox);   // 图像预处理
     nn_error_e Inference();                                                      // 推理
