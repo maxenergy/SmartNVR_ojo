@@ -41,6 +41,12 @@ typedef struct g_rknn_app_context_t {
     bool performance_mode;       // 性能模式标志
     std::chrono::steady_clock::time_point last_frame_time; // 帧率控制
 
+    // 卡住检测相关
+    std::chrono::steady_clock::time_point last_successful_frame; // 最后成功帧时间
+    int consecutive_failures;    // 连续失败次数
+    bool is_stuck;              // 是否卡住状态
+    int restart_attempts;       // 重启尝试次数
+
 } rknn_app_context_t;
 
 class ZLPlayer {
@@ -100,6 +106,12 @@ public:
     void optimizeThreadPool();
     void setFrameRateLimit(int targetFps);
     void logMemoryUsage();  // 内存使用监控
+
+    // 卡住检测和恢复方法
+    bool isStuck();         // 检测是否卡住
+    void resetStuckState(); // 重置卡住状态
+    bool attemptRestart();  // 尝试重启RTSP流
+    void updateFrameStatus(bool success); // 更新帧状态
 
     // void setRenderCallback(RenderCallback renderCallback_);
 

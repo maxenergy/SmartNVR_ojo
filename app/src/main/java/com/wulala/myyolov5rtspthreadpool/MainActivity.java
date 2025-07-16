@@ -90,6 +90,26 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+
+        // 延迟10秒后自动测试多实例创建（确保native初始化完成）
+        new android.os.Handler().postDelayed(() -> {
+            android.util.Log.d("MainActivity", "Auto-triggering multi-instance test, nativePlayerObj=" + nativePlayerObj);
+            if (nativePlayerObj != 0) {
+                testMultiInstanceCreation();
+            } else {
+                android.util.Log.w("MainActivity", "nativePlayerObj not ready, skipping test");
+            }
+        }, 10000);
+
+        // 延迟40秒后测试卡住检测
+        new android.os.Handler().postDelayed(() -> {
+            android.util.Log.d("MainActivity", "Testing stuck detection");
+            try {
+                checkAndRecoverStuckCameras();
+            } catch (Exception e) {
+                android.util.Log.e("MainActivity", "Error testing stuck detection: " + e.getMessage());
+            }
+        }, 40000);
         
         // Ensure fullscreen mode is maintained
         getWindow().setFlags(
@@ -317,6 +337,7 @@ public class MainActivity extends AppCompatActivity {
     public native void setRtspUrlForCamera(long nativePlayerObj, int cameraIndex, String rtspUrl);
     public native void startAllRtspStreams(long nativePlayerObj, int cameraCount);
     public native void switchCamera();
+    public native void checkAndRecoverStuckCameras();
 
     // 手动切换摄像头的方法
     public void switchCameraManually() {
@@ -354,6 +375,9 @@ public class MainActivity extends AppCompatActivity {
                     startAllRtspStreams(nativePlayerObj, 4);
                     android.util.Log.d("MainActivity", "All RTSP streams started");
 
+                    // 启动卡住检测任务
+                    startStuckDetectionTask();
+
                     // 在UI线程显示结果
                     runOnUiThread(() -> {
                         android.widget.Toast.makeText(this, "多实例创建完成", android.widget.Toast.LENGTH_SHORT).show();
@@ -366,6 +390,32 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
         }).start();
+    }
+
+    // 启动卡住检测任务
+    private void startStuckDetectionTask() {
+        android.util.Log.d("MainActivity", "Starting stuck detection task");
+
+        // 每30秒检查一次卡住状态
+        android.os.Handler handler = new android.os.Handler();
+        Runnable stuckDetectionRunnable = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (nativePlayerObj != 0) {
+                        checkAndRecoverStuckCameras();
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e("MainActivity", "Error in stuck detection: " + e.getMessage());
+                }
+
+                // 继续下一次检查
+                handler.postDelayed(this, 30000); // 30秒后再次检查
+            }
+        };
+
+        // 启动第一次检查
+        handler.postDelayed(stuckDetectionRunnable, 30000);
     }
 
 }

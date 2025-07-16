@@ -217,6 +217,77 @@ void ZLPlayer::logMemoryUsage() {
     }
 }
 
+// 卡住检测和恢复方法实现
+bool ZLPlayer::isStuck() {
+    auto now = std::chrono::steady_clock::now();
+    auto timeSinceLastFrame = std::chrono::duration_cast<std::chrono::seconds>(
+        now - app_ctx.last_successful_frame).count();
+
+    // 如果超过10秒没有成功帧，认为卡住
+    if (timeSinceLastFrame > 10) {
+        app_ctx.is_stuck = true;
+        LOGW("Camera %d detected as stuck: %lld seconds since last successful frame",
+             app_ctx.camera_index, (long long)timeSinceLastFrame);
+        return true;
+    }
+
+    // 如果连续失败次数过多，也认为卡住
+    if (app_ctx.consecutive_failures > 50) {
+        app_ctx.is_stuck = true;
+        LOGW("Camera %d detected as stuck: %d consecutive failures",
+             app_ctx.camera_index, app_ctx.consecutive_failures);
+        return true;
+    }
+
+    return false;
+}
+
+void ZLPlayer::resetStuckState() {
+    app_ctx.is_stuck = false;
+    app_ctx.consecutive_failures = 0;
+    app_ctx.last_successful_frame = std::chrono::steady_clock::now();
+    LOGD("Camera %d stuck state reset", app_ctx.camera_index);
+}
+
+bool ZLPlayer::attemptRestart() {
+    if (app_ctx.restart_attempts >= 3) {
+        LOGE("Camera %d maximum restart attempts reached", app_ctx.camera_index);
+        return false;
+    }
+
+    app_ctx.restart_attempts++;
+    LOGW("Camera %d attempting restart (attempt %d/3)",
+         app_ctx.camera_index, app_ctx.restart_attempts);
+
+    // 停止当前RTSP流
+    stopRtspStream();
+
+    // 等待一段时间后重新启动
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    // 重新启动RTSP流
+    startRtspStream();
+
+    // 重置状态
+    resetStuckState();
+
+    return true;
+}
+
+void ZLPlayer::updateFrameStatus(bool success) {
+    if (success) {
+        app_ctx.last_successful_frame = std::chrono::steady_clock::now();
+        app_ctx.consecutive_failures = 0;
+        app_ctx.restart_attempts = 0;  // 成功后重置重启计数
+        if (app_ctx.is_stuck) {
+            LOGD("Camera %d recovered from stuck state", app_ctx.camera_index);
+            app_ctx.is_stuck = false;
+        }
+    } else {
+        app_ctx.consecutive_failures++;
+    }
+}
+
 ZLPlayer::ZLPlayer(char *modelFileData, int modelDataLen) {
 
     // 使用本地网络示例URL，避免连接到无效的演示URL
@@ -244,6 +315,12 @@ ZLPlayer::ZLPlayer(char *modelFileData, int modelDataLen) {
     app_ctx.camera_index = 0;
     app_ctx.performance_mode = true;
     app_ctx.last_frame_time = std::chrono::steady_clock::now();
+
+    // 初始化卡住检测参数
+    app_ctx.last_successful_frame = std::chrono::steady_clock::now();
+    app_ctx.consecutive_failures = 0;
+    app_ctx.is_stuck = false;
+    app_ctx.restart_attempts = 0;
 
     // app_ctx.job_cnt = 1;
     // app_ctx.result_cnt = 1;
@@ -353,7 +430,12 @@ void ZLPlayer::renderFrameToWindow(uint8_t *src_data, int width, int height, int
         return;
     }
 
-    pthread_mutex_lock(&windowMutex);
+    // 使用trylock避免长时间阻塞
+    int lockResult = pthread_mutex_trylock(&windowMutex);
+    if (lockResult != 0) {
+        LOGW("Camera %d renderFrameToWindow: mutex is busy, skipping render", app_ctx.camera_index);
+        return;
+    }
 
     LOGD("renderFrameToWindow: Setting buffer geometry for window=%p", targetWindow);
     
@@ -500,10 +582,18 @@ void ZLPlayer::display() {
 }
 
 void ZLPlayer::get_detect_result() {
-    std::vector<Detection> objects;
-    // LOGD("decoder_callback Getting result count :%d", app_ctx.result_cnt);
-    auto ret_code = app_ctx.yolov5ThreadPool->getTargetResultNonBlock(objects, app_ctx.result_cnt);
-    if (ret_code == NN_SUCCESS) {
+    try {
+        std::vector<Detection> objects;
+        // LOGD("decoder_callback Getting result count :%d", app_ctx.result_cnt);
+
+        if (!app_ctx.yolov5ThreadPool) {
+            LOGE("Camera %d YOLOv5ThreadPool is null", app_ctx.camera_index);
+            updateFrameStatus(false);
+            return;
+        }
+
+        auto ret_code = app_ctx.yolov5ThreadPool->getTargetResultNonBlock(objects, app_ctx.result_cnt);
+        if (ret_code == NN_SUCCESS) {
 
         uint8_t idx;
         for (idx = 0; idx < objects.size(); idx++) {
@@ -512,8 +602,14 @@ void ZLPlayer::get_detect_result() {
             LOGD("objects[%d].class name: %s\n", idx, objects[idx].className.c_str());
         }
         auto frameData = app_ctx.yolov5ThreadPool->getTargetImgResult(app_ctx.result_cnt);
+        if (!frameData || !frameData->data) {
+            LOGE("Camera %d frameData is null or invalid", app_ctx.camera_index);
+            updateFrameStatus(false);
+            return;
+        }
+
         app_ctx.result_cnt++;
-        LOGD("Get detect result counter:%d start display", app_ctx.result_cnt);
+        LOGD("Camera %d Get detect result counter:%d start display", app_ctx.camera_index, app_ctx.result_cnt);
         
         // 在显示之前绘制检测框
         if (objects.size() > 0) {
@@ -550,17 +646,42 @@ void ZLPlayer::get_detect_result() {
         lastDisplayTime = now;
 
         // 使用专用窗口渲染，如果没有专用窗口则使用全局窗口
-        if (dedicatedWindow) {
-            renderFrameToWindow((uint8_t *) frameData->data, frameData->screenW, frameData->screenH, frameData->screenStride, dedicatedWindow);
-        } else {
-            renderFrame((uint8_t *) frameData->data, frameData->screenW, frameData->screenH, frameData->screenStride);
+        bool renderSuccess = false;
+        try {
+            if (dedicatedWindow) {
+                renderFrameToWindow((uint8_t *) frameData->data, frameData->screenW, frameData->screenH, frameData->screenStride, dedicatedWindow);
+                renderSuccess = true;
+            } else {
+                renderFrame((uint8_t *) frameData->data, frameData->screenW, frameData->screenH, frameData->screenStride);
+                renderSuccess = true;
+            }
+        } catch (...) {
+            LOGE("Camera %d render failed", app_ctx.camera_index);
+            renderSuccess = false;
         }
+
         // 释放内存
         delete frameData->data;
         frameData->data = nullptr;
 
+        // 更新帧状态
+        updateFrameStatus(renderSuccess);
+
     } else if (NN_RESULT_NOT_READY == ret_code) {
+        // 结果未准备好，不算失败
         // LOGD("decoder_callback wait for result ready");
+    } else {
+        // 其他错误情况
+        LOGW("Camera %d get_detect_result failed with code: %d", app_ctx.camera_index, ret_code);
+        updateFrameStatus(false);
+    }
+
+    } catch (const std::exception& e) {
+        LOGE("Camera %d get_detect_result exception: %s", app_ctx.camera_index, e.what());
+        updateFrameStatus(false);
+    } catch (...) {
+        LOGE("Camera %d get_detect_result unknown exception", app_ctx.camera_index);
+        updateFrameStatus(false);
     }
 }
 
@@ -621,6 +742,16 @@ int ZLPlayer::process_video_rtsp() {
             std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
 
             try {
+                // 检查是否卡住
+                if (isStuck()) {
+                    LOGW("Camera %d is stuck, attempting restart", app_ctx.camera_index);
+                    if (!attemptRestart()) {
+                        LOGE("Camera %d restart failed, breaking RTSP loop", app_ctx.camera_index);
+                        break;
+                    }
+                    continue;  // 重启后继续循环
+                }
+
                 get_detect_result();
 
                 // 如果能正常获取结果，说明连接正常
@@ -633,6 +764,7 @@ int ZLPlayer::process_video_rtsp() {
             } catch (...) {
                 LOGW("Error in get_detect_result for camera %d, connection may be unstable", app_ctx.camera_index);
                 connection_timeout_count++;
+                updateFrameStatus(false);  // 记录失败状态
             }
 
             status_check_count++;
@@ -656,8 +788,17 @@ int ZLPlayer::process_video_rtsp() {
 
             // 如果连接超时次数过多，尝试重连
             if (connection_timeout_count > 30) { // 30次检查失败
-                LOGE("RTSP connection timeout, attempting to restart");
-                break; // 退出循环，让上层重新启动
+                LOGW("Camera %d RTSP connection timeout, attempting restart", app_ctx.camera_index);
+
+                // 尝试重新连接
+                if (attemptRestart()) {
+                    connection_timeout_count = 0;  // 重置超时计数
+                    connection_established = false; // 重置连接状态
+                    continue;
+                } else {
+                    LOGE("Camera %d restart failed after timeout, breaking loop", app_ctx.camera_index);
+                    break; // 退出循环
+                }
             }
         }
         

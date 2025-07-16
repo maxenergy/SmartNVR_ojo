@@ -369,3 +369,32 @@ Java_com_wulala_myyolov5rtspthreadpool_MainActivity_switchCamera(JNIEnv *env, jo
         }
     }
 }
+
+// 检查并恢复卡住的摄像头
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_wulala_myyolov5rtspthreadpool_MainActivity_checkAndRecoverStuckCameras(JNIEnv *env, jobject thiz) {
+    LOGD("Checking for stuck cameras");
+
+    int stuckCount = 0;
+    for (int i = 0; i < totalCameras && i < MAX_CAMERAS; i++) {
+        auto it = cameraPlayers.find(i);
+        if (it != cameraPlayers.end() && it->second) {
+            if (it->second->isStuck()) {
+                LOGW("Camera %d is stuck, attempting recovery", i);
+                if (it->second->attemptRestart()) {
+                    LOGD("Camera %d recovery attempt initiated", i);
+                } else {
+                    LOGE("Camera %d recovery failed", i);
+                }
+                stuckCount++;
+            }
+        }
+    }
+
+    if (stuckCount > 0) {
+        LOGW("Found %d stuck cameras, recovery attempts initiated", stuckCount);
+    } else {
+        LOGD("All cameras are running normally");
+    }
+}
