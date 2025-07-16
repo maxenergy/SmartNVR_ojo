@@ -90,26 +90,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-
-        // 延迟10秒后自动测试多实例创建（确保native初始化完成）
-        new android.os.Handler().postDelayed(() -> {
-            android.util.Log.d("MainActivity", "Auto-triggering multi-instance test, nativePlayerObj=" + nativePlayerObj);
-            if (nativePlayerObj != 0) {
-                testMultiInstanceCreation();
-            } else {
-                android.util.Log.w("MainActivity", "nativePlayerObj not ready, skipping test");
-            }
-        }, 10000);
-
-        // 延迟40秒后测试卡住检测
-        new android.os.Handler().postDelayed(() -> {
-            android.util.Log.d("MainActivity", "Testing stuck detection");
-            try {
-                checkAndRecoverStuckCameras();
-            } catch (Exception e) {
-                android.util.Log.e("MainActivity", "Error testing stuck detection: " + e.getMessage());
-            }
-        }, 40000);
         
         // Ensure fullscreen mode is maintained
         getWindow().setFlags(
@@ -375,7 +355,8 @@ public class MainActivity extends AppCompatActivity {
                     startAllRtspStreams(nativePlayerObj, 4);
                     android.util.Log.d("MainActivity", "All RTSP streams started");
 
-                    // 启动卡住检测任务
+                    // 启动卡住检测任务（生产环境稳定性保障功能）
+                    // 每30秒自动检查摄像头状态，检测卡住并自动恢复
                     startStuckDetectionTask();
 
                     // 在UI线程显示结果
