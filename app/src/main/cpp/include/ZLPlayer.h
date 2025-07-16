@@ -35,6 +35,12 @@ typedef struct g_rknn_app_context_t {
     int result_cnt;
     int frame_cnt;
 
+    // 性能优化相关
+    int thread_pool_size;        // 动态线程池大小
+    int camera_index;            // 摄像头索引，用于优先级控制
+    bool performance_mode;       // 性能模式标志
+    std::chrono::steady_clock::time_point last_frame_time; // 帧率控制
+
 } rknn_app_context_t;
 
 class ZLPlayer {
@@ -88,6 +94,12 @@ public:
 
     // 设置专用的渲染窗口（用于多摄像头）
     void setNativeWindow(ANativeWindow *window);
+
+    // 性能优化方法
+    void setPerformanceConfig(int cameraIndex, int totalCameras, bool performanceMode = true);
+    void optimizeThreadPool();
+    void setFrameRateLimit(int targetFps);
+    void logMemoryUsage();  // 内存使用监控
 
     // void setRenderCallback(RenderCallback renderCallback_);
 

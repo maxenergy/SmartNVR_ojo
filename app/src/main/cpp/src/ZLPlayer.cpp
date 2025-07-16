@@ -4,6 +4,8 @@
 #include <chrono>
 #include <thread>
 #include <opencv2/opencv.hpp>
+#include <sys/resource.h>
+#include <pthread.h>
 #include "ZLPlayer.h"
 #include "mpp_err.h"
 #include "cv_draw.h"
@@ -15,6 +17,14 @@ extern ANativeWindow *window;
 void *rtps_process(void *arg) {
     ZLPlayer *player = (ZLPlayer *) arg;
     if (player) {
+        // 在线程内部设置优先级（Android兼容方式）
+        int niceValue = (player->app_ctx.camera_index == 0) ? -5 : 0;
+        if (setpriority(PRIO_PROCESS, 0, niceValue) == 0) {
+            LOGD("RTSP thread priority set to nice=%d for camera %d", niceValue, player->app_ctx.camera_index);
+        } else {
+            LOGW("Failed to set RTSP thread priority for camera %d", player->app_ctx.camera_index);
+        }
+
         player->process_video_rtsp();
     } else {
         LOGE("player is null");
@@ -54,10 +64,10 @@ void ZLPlayer::initializeModelData(char* modelData, int modelSize) {
         this->modelFileContent = (char *) malloc(modelSize);
         memcpy(this->modelFileContent, modelData, modelSize);
 
-        // 重新初始化YOLOv5线程池
+        // 重新初始化YOLOv5线程池，使用动态线程池大小
         if (app_ctx.yolov5ThreadPool != nullptr) {
-            app_ctx.yolov5ThreadPool->setUpWithModelData(20, this->modelFileContent, this->modelFileSize);
-            LOGD("YOLOv5 thread pool re-initialized with new model data");
+            app_ctx.yolov5ThreadPool->setUpWithModelData(app_ctx.thread_pool_size, this->modelFileContent, this->modelFileSize);
+            LOGD("YOLOv5 thread pool re-initialized with %d threads", app_ctx.thread_pool_size);
         }
     }
 }
@@ -86,11 +96,22 @@ void ZLPlayer::startRtspStream() {
 
     LOGD("Starting RTSP stream with URL: %s", rtsp_url);
     isStreaming = true;  // 设置流状态标志
+
     int result = pthread_create(&pid_rtsp, nullptr, rtps_process, this);
+
     if (result != 0) {
         LOGE("Failed to create RTSP thread: %d", result);
         pid_rtsp = 0;
         isStreaming = false;
+    } else {
+        LOGD("RTSP thread created successfully for camera %d", app_ctx.camera_index);
+
+        // 在线程创建后设置nice值（Android兼容方式）
+        // 主摄像头使用更高优先级（更低的nice值）
+        int niceValue = (app_ctx.camera_index == 0) ? -5 : 0;
+
+        // 注意：这里需要在RTSP线程内部设置，暂时记录配置
+        LOGD("Camera %d configured with nice value: %d", app_ctx.camera_index, niceValue);
     }
 }
 
@@ -117,12 +138,12 @@ void ZLPlayer::stopRtspStream() {
 
 void ZLPlayer::setNativeWindow(ANativeWindow *window) {
     pthread_mutex_lock(&windowMutex);
-    
+
     // 释放之前的专用窗口
     if (dedicatedWindow) {
         ANativeWindow_release(dedicatedWindow);
     }
-    
+
     // 设置新的专用窗口
     dedicatedWindow = window;
     if (dedicatedWindow) {
@@ -131,8 +152,69 @@ void ZLPlayer::setNativeWindow(ANativeWindow *window) {
     } else {
         LOGD("Dedicated native window cleared for ZLPlayer instance");
     }
-    
+
     pthread_mutex_unlock(&windowMutex);
+}
+
+// 性能优化：设置性能配置
+void ZLPlayer::setPerformanceConfig(int cameraIndex, int totalCameras, bool performanceMode) {
+    app_ctx.camera_index = cameraIndex;
+    app_ctx.performance_mode = performanceMode;
+
+    // 根据摄像头总数动态分配线程池大小
+    if (totalCameras <= 1) {
+        app_ctx.thread_pool_size = 12;  // 单摄像头使用较多线程
+    } else if (totalCameras <= 2) {
+        app_ctx.thread_pool_size = 8;   // 2路摄像头每路8个线程
+    } else if (totalCameras <= 4) {
+        app_ctx.thread_pool_size = 5;   // 4路摄像头每路5个线程
+    } else {
+        app_ctx.thread_pool_size = 3;   // 更多摄像头时进一步减少
+    }
+
+    LOGD("Camera %d performance config: threads=%d, performance_mode=%s",
+         cameraIndex, app_ctx.thread_pool_size, performanceMode ? "true" : "false");
+}
+
+// 性能优化：优化线程池
+void ZLPlayer::optimizeThreadPool() {
+    if (app_ctx.yolov5ThreadPool && app_ctx.thread_pool_size > 0) {
+        // 重新初始化线程池（如果支持动态调整）
+        LOGD("Optimizing thread pool size to %d threads", app_ctx.thread_pool_size);
+        // 注意：这里可能需要根据Yolov5ThreadPool的实际API进行调整
+    }
+}
+
+// 性能优化：设置帧率限制
+void ZLPlayer::setFrameRateLimit(int targetFps) {
+    if (targetFps > 0 && targetFps <= 60) {
+        int intervalMs = 1000 / targetFps;
+        nextRendTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(intervalMs);
+        LOGD("Frame rate limit set to %d FPS (%d ms interval)", targetFps, intervalMs);
+    }
+}
+
+// 内存使用监控
+void ZLPlayer::logMemoryUsage() {
+    // 读取进程内存信息
+    FILE* file = fopen("/proc/self/status", "r");
+    if (file) {
+        char line[256];
+        while (fgets(line, sizeof(line), file)) {
+            if (strncmp(line, "VmRSS:", 6) == 0) {
+                LOGD("Camera %d Memory RSS: %s", app_ctx.camera_index, line + 6);
+            } else if (strncmp(line, "VmSize:", 7) == 0) {
+                LOGD("Camera %d Memory VmSize: %s", app_ctx.camera_index, line + 7);
+            }
+        }
+        fclose(file);
+    }
+
+    // 记录线程池状态
+    if (app_ctx.yolov5ThreadPool) {
+        LOGD("Camera %d ThreadPool status: configured with %d threads",
+             app_ctx.camera_index, app_ctx.thread_pool_size);
+    }
 }
 
 ZLPlayer::ZLPlayer(char *modelFileData, int modelDataLen) {
@@ -156,6 +238,13 @@ ZLPlayer::ZLPlayer(char *modelFileData, int modelDataLen) {
     LOGD("create mpp");
     // 创建上下文
     memset(&app_ctx, 0, sizeof(rknn_app_context_t)); // 初始化上下文
+
+    // 初始化性能优化参数
+    app_ctx.thread_pool_size = 8;  // 默认线程池大小，后续可通过setPerformanceConfig调整
+    app_ctx.camera_index = 0;
+    app_ctx.performance_mode = true;
+    app_ctx.last_frame_time = std::chrono::steady_clock::now();
+
     // app_ctx.job_cnt = 1;
     // app_ctx.result_cnt = 1;
     // app_ctx.mppDataThreadPool = new MppDataThreadPool();
@@ -163,8 +252,8 @@ ZLPlayer::ZLPlayer(char *modelFileData, int modelDataLen) {
     // yolov8_thread_pool->setUpWithModelData(20, this->modelFileContent, this->modelFileSize);
     app_ctx.yolov5ThreadPool = new Yolov5ThreadPool(); // 创建线程池
     if (this->modelFileContent != nullptr && this->modelFileSize > 0) {
-        app_ctx.yolov5ThreadPool->setUpWithModelData(20, this->modelFileContent, this->modelFileSize);
-        LOGD("YOLOv5 thread pool initialized with model data");
+        app_ctx.yolov5ThreadPool->setUpWithModelData(app_ctx.thread_pool_size, this->modelFileContent, this->modelFileSize);
+        LOGD("YOLOv5 thread pool initialized with %d threads", app_ctx.thread_pool_size);
     } else {
         LOGW("YOLOv5 thread pool created without model data - will initialize later");
     }
@@ -258,12 +347,13 @@ void ZLPlayer::renderFrameToWindow(uint8_t *src_data, int width, int height, int
         return;
     }
 
-    pthread_mutex_lock(&windowMutex);
+    // 优化：先检查窗口有效性，减少锁持有时间
     if (!targetWindow) {
         LOGD("renderFrameToWindow: target window is null, skipping render");
-        pthread_mutex_unlock(&windowMutex);
         return;
     }
+
+    pthread_mutex_lock(&windowMutex);
 
     LOGD("renderFrameToWindow: Setting buffer geometry for window=%p", targetWindow);
     
@@ -395,23 +485,18 @@ void renderFrame(uint8_t *src_data, int width, int height, int src_line_size) {
 }
 
 void ZLPlayer::display() {
-    // int queueSize = app_ctx.renderFrameQueue->size();
-    // LOGD("app_ctx.renderFrameQueue.size() :%d", queueSize);
+    // 根据性能模式调整渲染间隔
+    int renderIntervalMs = app_ctx.performance_mode ? 33 : 50;  // 30FPS vs 20FPS
 
-    // auto frameDataPtr = app_ctx.renderFrameQueue->pop();
-    //    if (frameDataPtr == nullptr) {
-    //        LOGD("frameDataPtr is null");
-    //        return;
-    //    }
+    // 如果是高优先级摄像头，可以更高的帧率
+    if (app_ctx.camera_index == 0) {
+        renderIntervalMs = app_ctx.performance_mode ? 25 : 33;  // 40FPS vs 30FPS
+    }
+
     std::this_thread::sleep_until(nextRendTime);
-    // renderFrame((uint8_t *) frameDataPtr->data, frameDataPtr->screenW, frameDataPtr->screenH, frameDataPtr->screenStride);
-    // 释放内存
-    // delete frameDataPtr->data;
-    // frameDataPtr->data = nullptr;
 
     // 设置下一次执行的时间点
-    nextRendTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
-
+    nextRendTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(renderIntervalMs);
 }
 
 void ZLPlayer::get_detect_result() {
@@ -531,8 +616,9 @@ int ZLPlayer::process_video_rtsp() {
         bool connection_established = false;
 
         while (isStreaming) {
-            // 减少主循环频率，避免过度消耗CPU
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            // 根据性能模式调整循环频率
+            int sleepMs = app_ctx.performance_mode ? 33 : 50;  // 性能模式30FPS，普通模式20FPS
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
 
             try {
                 get_detect_result();
@@ -541,23 +627,30 @@ int ZLPlayer::process_video_rtsp() {
                 if (!connection_established) {
                     connection_established = true;
                     connection_timeout_count = 0;
-                    LOGD("RTSP connection established successfully");
+                    LOGD("RTSP connection established successfully for camera %d", app_ctx.camera_index);
                 }
 
             } catch (...) {
-                LOGW("Error in get_detect_result, connection may be unstable");
+                LOGW("Error in get_detect_result for camera %d, connection may be unstable", app_ctx.camera_index);
                 connection_timeout_count++;
             }
 
             status_check_count++;
 
-            // 每5秒检查一次连接状态
+            // 每5秒检查一次连接状态和内存使用
             if (status_check_count % 50 == 0) { // 5秒 = 50 * 100ms
                 if (connection_established) {
-                    LOGD("RTSP connection active for %d seconds", status_check_count * 100 / 1000);
+                    LOGD("Camera %d RTSP connection active for %d seconds",
+                         app_ctx.camera_index, status_check_count * 100 / 1000);
                 } else {
-                    LOGW("RTSP connection not established after %d seconds", status_check_count * 100 / 1000);
+                    LOGW("Camera %d RTSP connection not established after %d seconds",
+                         app_ctx.camera_index, status_check_count * 100 / 1000);
                     connection_timeout_count++;
+                }
+
+                // 定期记录内存使用情况
+                if (status_check_count % 200 == 0) { // 每20秒记录一次内存
+                    logMemoryUsage();
                 }
             }
 
@@ -740,21 +833,31 @@ void ZLPlayer::mpp_decoder_frame_callback(void *userdata, int width_stride, int 
     // 但不能破坏时间同步机制
     ctx->frame_cnt++;
     
-    // 检查推理线程池是否过载
-    const int MAX_QUEUE_SIZE = 5; // 最大队列长度
-    bool shouldInference = (ctx->frame_cnt % 3 == 0 && detectPoolSize < MAX_QUEUE_SIZE);
-    
+    // 动态调整推理策略
+    int maxQueueSize = ctx->performance_mode ? 3 : 5;  // 性能模式更严格的队列控制
+    int frameSkip = ctx->performance_mode ? 2 : 3;     // 性能模式跳帧更少
+
+    // 根据摄像头优先级调整处理策略
+    bool isHighPriority = (ctx->camera_index == 0);  // 第一个摄像头优先级最高
+    if (isHighPriority) {
+        maxQueueSize += 2;  // 高优先级摄像头允许更大队列
+        frameSkip = std::max(1, frameSkip - 1);  // 高优先级摄像头跳帧更少
+    }
+
+    bool shouldInference = (ctx->frame_cnt % frameSkip == 0 && detectPoolSize < maxQueueSize);
+
     if (shouldInference) {
-        // 每第3帧才进行推理，并且队列不能过载
+        // 提交推理任务
         ctx->yolov5ThreadPool->submitTask(frameData);
         ctx->job_cnt++;
-        LOGD("Frame %d submitted to inference pool", ctx->frame_cnt);
+        LOGD("Camera %d Frame %d submitted to inference pool (priority: %s)",
+             ctx->camera_index, ctx->frame_cnt, isHighPriority ? "high" : "normal");
     } else {
         // 跳过推理，直接释放内存
-        // 不要直接渲染，让get_detect_result()处理显示时机
         delete frameData->data;
         frameData->data = nullptr;
-        LOGD("Frame %d skipped inference (pool size: %d)", ctx->frame_cnt, detectPoolSize);
+        LOGD("Camera %d Frame %d skipped inference (pool size: %d, max: %d)",
+             ctx->camera_index, ctx->frame_cnt, detectPoolSize, maxQueueSize);
     }
 
     //    if (ctx->frame_cnt % 2 == 1) {

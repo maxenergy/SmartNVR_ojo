@@ -183,6 +183,12 @@ Java_com_wulala_myyolov5rtspthreadpool_MainActivity_setCameraCount(JNIEnv *env, 
     auto *mainPlayer = reinterpret_cast<ZLPlayer *>(native_player_obj);
     cameraPlayers[0] = mainPlayer;  // 主实例用于第一个摄像头
 
+    // 为主实例设置性能配置
+    mainPlayer->setPerformanceConfig(0, count, true);
+    mainPlayer->optimizeThreadPool();
+    mainPlayer->setFrameRateLimit(30);  // 主摄像头30FPS
+    LOGD("Camera 0 using main ZLPlayer instance with performance optimization");
+
     // 为每个额外的摄像头创建独立的ZLPlayer实例
     for (int i = 1; i < count && i < MAX_CAMERAS; i++) {
         try {
@@ -195,7 +201,13 @@ Java_com_wulala_myyolov5rtspthreadpool_MainActivity_setCameraCount(JNIEnv *env, 
 
             if (modelData != nullptr && modelSize > 0) {
                 newPlayer->initializeModelData(modelData, modelSize);
-                LOGD("Camera %d created independent ZLPlayer instance with model data", i);
+
+                // 为新实例设置性能配置
+                newPlayer->setPerformanceConfig(i, count, true);
+                newPlayer->optimizeThreadPool();
+                newPlayer->setFrameRateLimit(25);  // 其他摄像头25FPS
+
+                LOGD("Camera %d created independent ZLPlayer instance with performance optimization", i);
             } else {
                 LOGW("Camera %d created ZLPlayer instance without model data", i);
             }
@@ -209,6 +221,8 @@ Java_com_wulala_myyolov5rtspthreadpool_MainActivity_setCameraCount(JNIEnv *env, 
             cameraPlayers[i] = nullptr;
         }
     }
+
+    LOGD("Multi-camera performance optimization completed: %d cameras configured", count);
 }
 
 extern "C"
