@@ -40,7 +40,7 @@ public class Settings implements Serializable {
         } catch (FileNotFoundException e) {
             Log.d(TAG, "No saved settings found, will create a new one");
             // 添加安全的占位符URL，避免连接到无效的演示URL
-            s.cameras.add(new Camera("示例摄像头", "rtsp://192.168.1.100:554/stream"));  // 使用本地网络示例URL
+            s.cameras.add(new Camera("示例摄像头", "rtsp://admin:sharpi1688@192.168.1.2:554/1/1"));  // 使用本地网络示例URL
         } catch (IOException e) {
             Log.e(TAG, "Unable to load settings from disk: " + e.toString());
         } catch (ClassNotFoundException e) {

@@ -17,20 +17,26 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.fragment.app.Fragment;
 
 import com.wulala.myyolov5rtspthreadpool.MainActivity;
+import com.wulala.myyolov5rtspthreadpool.Settings;
 import com.wulala.myyolov5rtspthreadpool.databinding.FragmentSurveillanceBinding;
+import com.wulala.myyolov5rtspthreadpool.entities.Camera;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * SurveillanceFragment for YOLOv5 RTSP streaming with object detection
- * Adapted from ojo project UI structure to integrate native video display
+ * SurveillanceFragment for YOLOv5 RTSP streaming with multi-camera support
+ * Support 1x1, 1x2, 2x2, 3x3, 4x4 grid layouts for multiple cameras
  */
-public class SurveillanceFragment extends Fragment implements SurfaceHolder.Callback {
+public class SurveillanceFragment extends Fragment implements MultiCameraView.OnSurfaceChangeListener {
 
     private static final String TAG = "SurveillanceFragment";
 
     private FragmentSurveillanceBinding binding;
     private boolean fullscreenMode = false;
-    private SurfaceView videoSurface;
+    private MultiCameraView multiCameraView;
     private MainActivity mainActivity;
+    private List<Camera> cameras;
 
     @Override
     public View onCreateView(
@@ -40,30 +46,50 @@ public class SurveillanceFragment extends Fragment implements SurfaceHolder.Call
         binding = FragmentSurveillanceBinding.inflate(inflater, container, false);
         mainActivity = (MainActivity) getActivity();
 
-        // Create SurfaceView for native video rendering
-        videoSurface = new SurfaceView(getContext());
-        videoSurface.setLayoutParams(new LinearLayout.LayoutParams(
+        // 创建多摄像头视图
+        multiCameraView = new MultiCameraView(getContext());
+        multiCameraView.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.MATCH_PARENT
         ));
 
-        // Set up surface holder callback
-        videoSurface.getHolder().addCallback(this);
+        // 设置Surface回调监听器
+        multiCameraView.setOnSurfaceChangeListener(this);
 
-        // Add video surface to the container
-        binding.gridRowContainer.addView(videoSurface);
+        // 添加多摄像头视图到容器
+        binding.gridRowContainer.addView(multiCameraView);
 
-        // Set click listener for fullscreen toggle
-        videoSurface.setOnClickListener(v -> {
-            fullscreenMode = !fullscreenMode;
-            if (fullscreenMode) {
-                enterFullscreen();
-            } else {
-                exitFullscreen();
-            }
-        });
+        // 加载摄像头配置并设置视图
+        loadCamerasAndSetupViews();
 
         return binding.getRoot();
+    }
+
+    private void loadCamerasAndSetupViews() {
+        // 从设置中加载摄像头列表
+        Settings settings = Settings.fromDisk(getContext());
+        cameras = settings.getCameras();
+        
+        // 创建摄像头名称列表
+        List<String> cameraNames = new ArrayList<>();
+        for (Camera camera : cameras) {
+            cameraNames.add(camera.getName());
+        }
+        
+        // 如果没有摄像头，添加默认摄像头
+        if (cameraNames.isEmpty()) {
+            cameraNames.add("默认摄像头");
+        }
+        
+        android.util.Log.d(TAG, "Loading " + cameraNames.size() + " cameras");
+        
+        // 设置多摄像头视图
+        multiCameraView.setupCameras(cameraNames);
+        
+        // 通知MainActivity摄像头数量变化
+        if (mainActivity != null) {
+            mainActivity.onCameraCountChanged(cameras.size());
+        }
     }
 
     @Override
@@ -94,27 +120,37 @@ public class SurveillanceFragment extends Fragment implements SurfaceHolder.Call
     }
 
     @Override
-    public void surfaceCreated(SurfaceHolder holder) {
-        // Notify native code that surface is ready
+    public void onSurfaceCreated(int cameraIndex, SurfaceHolder holder) {
+        android.util.Log.d(TAG, "Surface created for camera " + cameraIndex);
+        // 通知native代码surface已准备就绪
         if (mainActivity != null) {
-            mainActivity.setNativeSurface(holder.getSurface());
+            mainActivity.setNativeSurface(cameraIndex, holder.getSurface());
+        }
+        
+        // 设置摄像头为活跃状态
+        multiCameraView.setCameraActive(cameraIndex, true);
+    }
+
+    @Override
+    public void onSurfaceChanged(int cameraIndex, SurfaceHolder holder, int format, int width, int height) {
+        android.util.Log.d(TAG, "Surface changed for camera " + cameraIndex + 
+                           ": " + width + "x" + height);
+        // 更新native代码中的surface
+        if (mainActivity != null) {
+            mainActivity.setNativeSurface(cameraIndex, holder.getSurface());
         }
     }
 
     @Override
-    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        // Update surface in native code
+    public void onSurfaceDestroyed(int cameraIndex, SurfaceHolder holder) {
+        android.util.Log.d(TAG, "Surface destroyed for camera " + cameraIndex);
+        // 释放native代码中的surface
         if (mainActivity != null) {
-            mainActivity.setNativeSurface(holder.getSurface());
+            mainActivity.setNativeSurface(cameraIndex, null);
         }
-    }
-
-    @Override
-    public void surfaceDestroyed(SurfaceHolder holder) {
-        // Release surface in native code
-        if (mainActivity != null) {
-            mainActivity.setNativeSurface(null);
-        }
+        
+        // 设置摄像头为非活跃状态
+        multiCameraView.setCameraActive(cameraIndex, false);
     }
 
     /**
@@ -138,10 +174,28 @@ public class SurveillanceFragment extends Fragment implements SurfaceHolder.Call
     private void enterFullscreen() {
         // Hide any additional UI elements for fullscreen viewing
         // The video surface already fills the container
+        fullscreenMode = true;
+        android.util.Log.d(TAG, "Entered fullscreen mode");
     }
 
     private void exitFullscreen() {
         // Show any hidden UI elements
         // The video surface maintains its layout
+        fullscreenMode = false;
+        android.util.Log.d(TAG, "Exited fullscreen mode");
+    }
+    
+    /**
+     * 刷新摄像头视图（当设置改变时调用）
+     */
+    public void refreshCameraViews() {
+        loadCamerasAndSetupViews();
+    }
+    
+    /**
+     * 获取指定摄像头的SurfaceView
+     */
+    public SurfaceView getCameraSurfaceView(int cameraIndex) {
+        return multiCameraView.getSurfaceView(cameraIndex);
     }
 }

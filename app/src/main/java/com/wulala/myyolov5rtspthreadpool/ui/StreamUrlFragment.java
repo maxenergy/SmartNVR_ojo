@@ -62,8 +62,10 @@ public class StreamUrlFragment extends Fragment {
             @Override
             public void onClick(View view) {
                 // Check the field is filled
-                String url = binding.streamUrl.getText().toString();
-                if (!(url.startsWith("rtsp://") || url.startsWith("http://"))) {
+                String url = binding.streamUrl.getText().toString().trim();
+
+                // Enhanced URL validation
+                if (!isValidRtspUrl(url)) {
                     Snackbar.make(view, R.string.add_stream_invalid_url, Snackbar.LENGTH_LONG)
                         .setAction(R.string.add_stream_invalid_url_dismiss, null).show();
                     return;
@@ -99,6 +101,64 @@ public class StreamUrlFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         binding = null;
+    }
+
+    /**
+     * Enhanced RTSP URL validation to prevent crashes
+     */
+    private boolean isValidRtspUrl(String url) {
+        if (url == null || url.trim().isEmpty()) {
+            return false;
+        }
+
+        url = url.trim().toLowerCase();
+
+        // Check protocol
+        if (!url.startsWith("rtsp://") && !url.startsWith("http://") && !url.startsWith("https://")) {
+            return false;
+        }
+
+        // Check minimum length
+        if (url.length() < 10) {
+            return false;
+        }
+
+        // Avoid known problematic demo URLs that cause crashes
+        String[] problematicUrls = {
+            "ipvmdemo.dyndns.org",
+            "demo:demo",
+            "test:test",
+            "admin:admin@192.168.1.1",
+            "localhost",
+            "127.0.0.1"
+        };
+
+        for (String problematic : problematicUrls) {
+            if (url.contains(problematic.toLowerCase())) {
+                return false;
+            }
+        }
+
+        // Basic URL structure validation
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            String host = uri.getHost();
+            int port = uri.getPort();
+
+            // Check if host is valid
+            if (host == null || host.trim().isEmpty()) {
+                return false;
+            }
+
+            // Check port range
+            if (port != -1 && (port < 1 || port > 65535)) {
+                return false;
+            }
+
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
 }

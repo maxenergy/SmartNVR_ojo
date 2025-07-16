@@ -14,3 +14,19 @@
 .cxx
 local.properties
 temp/
+3rdparty/ffmpeg/share/
+3rdparty/ffmpeg/lib/
+3rdparty/ffmpeg/include/
+3rdparty/zlmediakit/lib/
+3rdparty/zlmediakit/share/
+3rdparty/zlmediakit/include/
+
+# Build outputs that may contain large libraries
+app/build/
+app/src/main/jniLibs/
+*.so
+*.a
+
+# Large binary files
+3rdparty/*/lib/
+3rdparty/*/share/

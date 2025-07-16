@@ -14,6 +14,10 @@
 #include "mpp_decoder.h"
 #include "yolov5_thread_pool.h"
 #include "display_queue.h"
+#include <android/native_window.h>
+#include <vector>
+#include <map>
+#include <string>
 
 typedef struct g_rknn_app_context_t {
     FILE *out_fp;
@@ -42,6 +46,7 @@ private:
     pthread_t pid_render = 0;
     char *modelFileContent = 0;
     int modelFileSize = 0;
+    ANativeWindow *dedicatedWindow = nullptr; // 专用渲染窗口
 
     std::chrono::steady_clock::time_point nextRendTime;
 
@@ -61,18 +66,31 @@ public:
 
     // int process_video_rtsp(rknn_app_context_t *ctx, const char *url);
     void setModelFile(char *data, int dataLen);
-    
+
+    // 获取模型数据（用于创建多实例）
+    char* getModelData() const { return modelFileContent; }
+    int getModelSize() const { return modelFileSize; }
+
+    // 初始化模型数据（用于后续设置）
+    void initializeModelData(char* modelData, int modelSize);
+
     // 设置RTSP URL
     void setRtspUrl(const char *url);
-    
+
     // 启动RTSP流
     void startRtspStream();
+
+    // 设置专用的渲染窗口（用于多摄像头）
+    void setNativeWindow(ANativeWindow *window);
 
     // void setRenderCallback(RenderCallback renderCallback_);
 
     void display();
 
     void get_detect_result();
+    
+    // 渲染到专用窗口（用于多摄像头）
+    void renderFrameToWindow(uint8_t *src_data, int width, int height, int src_line_size, ANativeWindow *targetWindow);
 };
 
 #endif //AIBOX_ZLPLAYER_H
