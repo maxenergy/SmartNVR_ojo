@@ -80,6 +80,12 @@ public:
     // 启动RTSP流
     void startRtspStream();
 
+    // 停止RTSP流
+    void stopRtspStream();
+
+    // 检查是否正在运行
+    bool isRtspRunning() const { return pid_rtsp != 0; }
+
     // 设置专用的渲染窗口（用于多摄像头）
     void setNativeWindow(ANativeWindow *window);
 

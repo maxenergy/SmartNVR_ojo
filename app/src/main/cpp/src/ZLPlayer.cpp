@@ -78,14 +78,41 @@ void ZLPlayer::startRtspStream() {
         LOGE("Cannot start RTSP stream: URL not set");
         return;
     }
-    
+
     if (pid_rtsp != 0) {
         LOGD("RTSP stream already running");
         return;
     }
-    
+
     LOGD("Starting RTSP stream with URL: %s", rtsp_url);
-    pthread_create(&pid_rtsp, nullptr, rtps_process, this);
+    isStreaming = true;  // 设置流状态标志
+    int result = pthread_create(&pid_rtsp, nullptr, rtps_process, this);
+    if (result != 0) {
+        LOGE("Failed to create RTSP thread: %d", result);
+        pid_rtsp = 0;
+        isStreaming = false;
+    }
+}
+
+void ZLPlayer::stopRtspStream() {
+    if (pid_rtsp != 0) {
+        LOGD("Stopping RTSP stream");
+        // 设置停止标志，让线程自然退出
+        isStreaming = false;
+
+        // 简单等待线程结束（Android NDK可能不支持pthread_timedjoin_np）
+        int result = pthread_join(pid_rtsp, nullptr);
+        if (result == 0) {
+            LOGD("RTSP thread stopped gracefully");
+        } else {
+            LOGW("RTSP thread join failed, result: %d", result);
+        }
+
+        pid_rtsp = 0;
+        LOGD("RTSP stream stopped");
+    } else {
+        LOGD("RTSP stream is not running");
+    }
 }
 
 void ZLPlayer::setNativeWindow(ANativeWindow *window) {
@@ -503,7 +530,7 @@ int ZLPlayer::process_video_rtsp() {
         int connection_timeout_count = 0;
         bool connection_established = false;
 
-        while (true) {
+        while (isStreaming) {
             // 减少主循环频率，避免过度消耗CPU
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -557,15 +584,63 @@ int ZLPlayer::process_video_rtsp() {
 }
 
 ZLPlayer::~ZLPlayer() {
+    LOGD("ZLPlayer destructor called - cleaning up resources");
+
+    // 1. 停止RTSP线程
+    if (pid_rtsp != 0) {
+        LOGD("Stopping RTSP thread in destructor");
+        isStreaming = false;
+
+        // 在析构函数中，直接detach线程避免阻塞
+        pthread_detach(pid_rtsp);
+        pid_rtsp = 0;
+        LOGD("RTSP thread detached in destructor");
+    }
+
+    // 2. 停止渲染线程
+    if (pid_render != 0) {
+        LOGD("Stopping render thread in destructor");
+        // 渲染线程通常是无限循环，直接detach
+        pthread_detach(pid_render);
+        pid_render = 0;
+    }
+
+    // 3. 释放专用窗口
+    if (dedicatedWindow) {
+        pthread_mutex_lock(&windowMutex);
+        ANativeWindow_release(dedicatedWindow);
+        dedicatedWindow = nullptr;
+        pthread_mutex_unlock(&windowMutex);
+        LOGD("Released dedicated window");
+    }
+
+    // 4. 清理YOLOv5线程池
+    if (app_ctx.yolov5ThreadPool) {
+        delete app_ctx.yolov5ThreadPool;
+        app_ctx.yolov5ThreadPool = nullptr;
+        LOGD("Cleaned up YOLOv5 thread pool");
+    }
+
+    // 5. 清理MPP解码器
+    if (app_ctx.decoder) {
+        delete app_ctx.decoder;
+        app_ctx.decoder = nullptr;
+        LOGD("Cleaned up MPP decoder");
+    }
+
+    // 6. 释放RTSP URL
     if (rtsp_url != nullptr) {
         delete[] rtsp_url;
         rtsp_url = nullptr;
     }
-    
+
+    // 7. 释放模型数据
     if (modelFileContent != nullptr) {
         free(modelFileContent);
         modelFileContent = nullptr;
     }
+
+    LOGD("ZLPlayer destructor completed");
 }
 
 static struct timeval lastRenderTime;

@@ -57,8 +57,15 @@ public class MainActivity extends AppCompatActivity {
         setContentView(binding.getRoot());
 
         binding.fab.setOnClickListener(view -> {
-            android.util.Log.d("MainActivity", "FAB clicked - testing multi-instance");
+            android.util.Log.d("MainActivity", "FAB clicked - opening settings");
+            openSettings();
+        });
+
+        // 长按FAB测试多实例创建
+        binding.fab.setOnLongClickListener(view -> {
+            android.util.Log.d("MainActivity", "FAB long clicked - testing multi-instance");
             testMultiInstanceCreation();
+            return true;
         });
         
         // Initialize native components
@@ -317,28 +324,48 @@ public class MainActivity extends AppCompatActivity {
         switchCamera();
     }
 
-    // 测试多实例创建的方法
+    // 测试多实例创建的方法（在后台线程执行）
     public void testMultiInstanceCreation() {
         android.util.Log.d("MainActivity", "Testing multi-instance creation");
-        if (nativePlayerObj != 0) {
-            // 设置4个测试摄像头
-            setCameraCount(nativePlayerObj, 4);
 
-            // 设置测试RTSP URL
-            String[] testUrls = {
-                "rtsp://admin:sharpi1688@192.168.1.2:554/1/1",
-                "rtsp://admin:sharpi1688@192.168.1.3:554/1/1",
-                "rtsp://admin:sharpi1688@192.168.1.4:554/1/1",
-                "rtsp://admin:sharpi1688@192.168.1.5:554/1/1"
-            };
+        // 在后台线程执行，避免阻塞UI
+        new Thread(() -> {
+            try {
+                if (nativePlayerObj != 0) {
+                    android.util.Log.d("MainActivity", "Creating 4 camera instances");
 
-            for (int i = 0; i < testUrls.length; i++) {
-                setRtspUrlForCamera(nativePlayerObj, i, testUrls[i]);
+                    // 设置4个测试摄像头
+                    setCameraCount(nativePlayerObj, 4);
+
+                    // 设置测试RTSP URL
+                    String[] testUrls = {
+                        "rtsp://admin:sharpi1688@192.168.1.2:554/1/1",
+                        "rtsp://admin:sharpi1688@192.168.1.3:554/1/1",
+                        "rtsp://admin:sharpi1688@192.168.1.4:554/1/1",
+                        "rtsp://admin:sharpi1688@192.168.1.5:554/1/1"
+                    };
+
+                    for (int i = 0; i < testUrls.length; i++) {
+                        setRtspUrlForCamera(nativePlayerObj, i, testUrls[i]);
+                        android.util.Log.d("MainActivity", "Set RTSP URL for camera " + i);
+                    }
+
+                    // 启动所有流
+                    startAllRtspStreams(nativePlayerObj, 4);
+                    android.util.Log.d("MainActivity", "All RTSP streams started");
+
+                    // 在UI线程显示结果
+                    runOnUiThread(() -> {
+                        android.widget.Toast.makeText(this, "多实例创建完成", android.widget.Toast.LENGTH_SHORT).show();
+                    });
+                }
+            } catch (Exception e) {
+                android.util.Log.e("MainActivity", "Error in testMultiInstanceCreation: " + e.getMessage());
+                runOnUiThread(() -> {
+                    android.widget.Toast.makeText(this, "多实例创建失败: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                });
             }
-
-            // 启动所有流
-            startAllRtspStreams(nativePlayerObj, 4);
-        }
+        }).start();
     }
 
 }

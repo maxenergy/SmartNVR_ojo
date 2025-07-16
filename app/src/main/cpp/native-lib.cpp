@@ -171,6 +171,9 @@ Java_com_wulala_myyolov5rtspthreadpool_MainActivity_setCameraCount(JNIEnv *env, 
     // 清理现有的摄像头实例（除了主实例）
     for (auto& pair : cameraPlayers) {
         if (pair.second && pair.first > 0) {  // 保留主实例(index 0)
+            LOGD("Cleaning up ZLPlayer instance for camera %d", pair.first);
+            // 先停止RTSP流，再删除实例
+            pair.second->stopRtspStream();
             delete pair.second;
         }
     }
