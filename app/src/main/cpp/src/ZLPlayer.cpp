@@ -974,15 +974,16 @@ void ZLPlayer::mpp_decoder_frame_callback(void *userdata, int width_stride, int 
     // 但不能破坏时间同步机制
     ctx->frame_cnt++;
     
-    // 动态调整推理策略
+    // 优化后的推理策略：统一每2帧处理1帧（50%处理率）
     int maxQueueSize = ctx->performance_mode ? 3 : 5;  // 性能模式更严格的队列控制
-    int frameSkip = ctx->performance_mode ? 2 : 3;     // 性能模式跳帧更少
+    int frameSkip = 2;  // 统一设置为每2帧处理1帧，提高检测频率
 
     // 根据摄像头优先级调整处理策略
     bool isHighPriority = (ctx->camera_index == 0);  // 第一个摄像头优先级最高
     if (isHighPriority) {
         maxQueueSize += 2;  // 高优先级摄像头允许更大队列
-        frameSkip = std::max(1, frameSkip - 1);  // 高优先级摄像头跳帧更少
+        // 高优先级摄像头保持每2帧处理1帧，不再进一步减少跳帧
+        // frameSkip 保持为2，确保所有摄像头使用统一的处理频率
     }
 
     bool shouldInference = (ctx->frame_cnt % frameSkip == 0 && detectPoolSize < maxQueueSize);
@@ -991,13 +992,13 @@ void ZLPlayer::mpp_decoder_frame_callback(void *userdata, int width_stride, int 
         // 提交推理任务
         ctx->yolov5ThreadPool->submitTask(frameData);
         ctx->job_cnt++;
-        LOGD("Camera %d Frame %d submitted to inference pool (priority: %s)",
+        LOGD("Camera %d Frame %d submitted to inference pool (priority: %s, skip_rate: 1/2)",
              ctx->camera_index, ctx->frame_cnt, isHighPriority ? "high" : "normal");
     } else {
         // 跳过推理，直接释放内存
         delete frameData->data;
         frameData->data = nullptr;
-        LOGD("Camera %d Frame %d skipped inference (pool size: %d, max: %d)",
+        LOGD("Camera %d Frame %d skipped inference (pool size: %d, max: %d, skip_rate: 1/2)",
              ctx->camera_index, ctx->frame_cnt, detectPoolSize, maxQueueSize);
     }
 
