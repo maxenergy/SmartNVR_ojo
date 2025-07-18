@@ -30,3 +30,10 @@ app/src/main/jniLibs/
 # Large binary files
 3rdparty/*/lib/
 3rdparty/*/share/
+
+# Log and analysis files
+*.log
+*.csv
+crash_analysis_*
+crash_logcat_*
+memory_log*
