@@ -151,6 +151,16 @@ int MppDecoder::Decode(uint8_t *pkt_data, int pkt_size, int pkt_eos)
     if (packet == NULL)
     {
         ret = mpp_packet_init(&packet, NULL, 0);
+        if (ret != MPP_OK || packet == NULL) {
+            LOGD("Error: mpp_packet_init failed, ret=%d, packet=%p", ret, packet);
+            return ret;
+        }
+    }
+
+    // 🔧 修复: 在使用packet前再次检查是否为空
+    if (packet == NULL) {
+        LOGD("Error: packet is NULL before setting data");
+        return MPP_ERR_NULL_PTR;
     }
 
     ///////////////////////////////////////////////
@@ -274,11 +284,17 @@ int MppDecoder::Decode(uint8_t *pkt_data, int pkt_size, int pkt_eos)
                 }
                 else
                 {
-                    err_info = mpp_frame_get_errinfo(frame) | mpp_frame_get_discard(frame);
-                    if (err_info)
-                    {
-                        LOGD("decoder_get_frame get err info:%d discard:%d. ",
-                             mpp_frame_get_errinfo(frame), mpp_frame_get_discard(frame));
+                    // 🔧 修复: 在访问frame前检查是否为空
+                    if (frame != NULL) {
+                        err_info = mpp_frame_get_errinfo(frame) | mpp_frame_get_discard(frame);
+                        if (err_info)
+                        {
+                            LOGD("decoder_get_frame get err info:%d discard:%d. ",
+                                 mpp_frame_get_errinfo(frame), mpp_frame_get_discard(frame));
+                        }
+                    } else {
+                        LOGD("Warning: frame is NULL in error info check, skipping");
+                        err_info = 0;
                     }
                     data->frame_count++;
                     struct timeval tv;
@@ -286,13 +302,23 @@ int MppDecoder::Decode(uint8_t *pkt_data, int pkt_size, int pkt_eos)
                     LOGD("get one frame %ld ", (tv.tv_sec * 1000 + tv.tv_usec / 1000));
                     // mpp_frame_get_width(frame);
                     // char *input_data =(char *) mpp_buffer_get_ptr(mpp_frame_get_buffer(frame));
-                    if (callback != nullptr)
+                    // 🔧 修复: 在callback调用前再次检查frame是否为空
+                    if (callback != nullptr && frame != NULL)
                     {
-                        MppFrameFormat format = mpp_frame_get_fmt(frame);
-                        char *data_vir = (char *)mpp_buffer_get_ptr(mpp_frame_get_buffer(frame));
-                        int fd = mpp_buffer_get_fd(mpp_frame_get_buffer(frame));
-                        LOGD("data_vir=%p fd=%d ", data_vir, fd);
-                        callback(this->userdata, hor_stride, ver_stride, hor_width, ver_height, format, fd, data_vir);
+                        MppBuffer buffer = mpp_frame_get_buffer(frame);
+                        if (buffer != NULL) {
+                            MppFrameFormat format = mpp_frame_get_fmt(frame);
+                            char *data_vir = (char *)mpp_buffer_get_ptr(buffer);
+                            int fd = mpp_buffer_get_fd(buffer);
+                            LOGD("data_vir=%p fd=%d ", data_vir, fd);
+                            if (data_vir != NULL) {
+                                callback(this->userdata, hor_stride, ver_stride, hor_width, ver_height, format, fd, data_vir);
+                            } else {
+                                LOGD("Warning: data_vir is NULL, skipping callback");
+                            }
+                        } else {
+                            LOGD("Warning: frame buffer is NULL, skipping callback");
+                        }
                     }
                     unsigned long cur_time_ms = GetCurrentTimeMS();
                     long time_gap = 1000 / this->fps - (cur_time_ms - this->last_frame_time_ms);
@@ -303,10 +329,16 @@ int MppDecoder::Decode(uint8_t *pkt_data, int pkt_size, int pkt_eos)
                     }
                     this->last_frame_time_ms = GetCurrentTimeMS();
                 }
-                frm_eos = mpp_frame_get_eos(frame);
 
-                ret = mpp_frame_deinit(&frame);
-                frame = NULL;
+                // 🔧 修复: 在访问frame前检查是否为空，防止段错误
+                if (frame != NULL) {
+                    frm_eos = mpp_frame_get_eos(frame);
+                    ret = mpp_frame_deinit(&frame);
+                    frame = NULL;
+                } else {
+                    LOGD("Warning: frame is NULL before mpp_frame_get_eos, skipping");
+                    frm_eos = 1; // 设置为结束标志，避免无限循环
+                }
 
                 // if(frame_pre!=NULL)
                 // {
@@ -368,7 +400,14 @@ int MppDecoder::Decode(uint8_t *pkt_data, int pkt_size, int pkt_eos)
          */
         usleep(3 * 1000);
     } while (1);
-    mpp_packet_deinit(&packet);
+
+    // 🔧 修复: 在释放packet前检查是否为空，防止段错误
+    if (packet != NULL) {
+        mpp_packet_deinit(&packet);
+        packet = NULL;
+    } else {
+        LOGD("Warning: packet is NULL in deinit, skipping");
+    }
 
     return ret;
 }

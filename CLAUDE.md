@@ -33,6 +33,21 @@ This is an Android project that implements YOLOv5 object detection with RTSP str
 
 # Clean build
 ./gradlew clean
+
+# Run memory monitoring for debugging
+./memory_monitor_zlmediakit.sh
+```
+
+### Testing and Debugging
+```bash
+# Monitor application memory usage
+./memory_monitor_zlmediakit.sh
+
+# Check for memory leaks in logs
+adb logcat | grep -E "(memory|leak|oom)"
+
+# Debug native crashes
+adb logcat | grep -E "(FATAL|SIGSEGV|tombstone)"
 ```
 
 ## Architecture
@@ -61,12 +76,27 @@ This is an Android project that implements YOLOv5 object detection with RTSP str
 
 ### Key Dependencies
 
-- **3rdparty/ffmpeg/**: FFmpeg libraries for media handling
-- **3rdparty/zlmediakit/**: ZLMediaKit for RTSP/streaming protocols
+- **3rdparty/ffmpeg/**: FFmpeg libraries for media handling (built from scripts/build_ffmpeg.sh)
+- **3rdparty/zlmediakit/**: ZLMediaKit for RTSP/streaming protocols (built from scripts/build_zlmediakit.sh)
 - **rknn/**: Rockchip RKNN runtime for neural network inference
 - **opencv/**: OpenCV 4.8 for computer vision operations
 - **mpp/**: Rockchip Media Process Platform for hardware acceleration
 - **rga/**: Rockchip 2D Graphics Acceleration library
+
+### CMake Configuration
+
+The project uses CMake with specific settings for Android arm64-v8a:
+- **NDK Version**: 27.0.12077973
+- **Minimum API**: 31 (Android 12)
+- **C++ Standard**: C++11
+- **Target Architecture**: arm64-v8a only
+
+Key CMake variables (app/src/main/cpp/CMakeLists.txt):
+```cmake
+set(THIRD_PARTY /home/rogers/source/rockchip/yolov5rtspthreadpool/3rdparty)
+set(FFMPEG ${THIRD_PARTY}/ffmpeg)
+set(ZLMEDIAKIT ${THIRD_PARTY}/zlmediakit)
+```
 
 ### Data Flow
 
@@ -82,7 +112,7 @@ This is an Android project that implements YOLOv5 object detection with RTSP str
 - Model quantization is handled by RKNN toolkit
 
 ### Thread Management
-- Maximum 20 YOLOv5 inference threads (configurable in `yolov5_thread_pool.h`)
+- Maximum 22 YOLOv5 inference threads (configurable in `yolov5_thread_pool.h`)
 - Separate threads for RTSP processing and display rendering
 - Thread-safe queues for frame and result management
 
@@ -96,19 +126,34 @@ This is an Android project that implements YOLOv5 object detection with RTSP str
 - Asset manager integration for model file loading
 - Native window handling for video display
 
+### Memory Management
+Recent commits indicate ongoing memory optimization work:
+- ZLMediaKit version fixes for memory leaks
+- Memory monitoring scripts available (`memory_monitor_zlmediakit.sh`)
+- CSV logging for memory usage tracking
+
 ## Common Issues
 
 ### Build Issues
 - Ensure Android NDK 27.0.12077973 is installed
 - Check CMake toolchain file paths in CMakeLists.txt
-- Verify ZLMediaKit path configuration (line 35 in CMakeLists.txt)
+- Verify ZLMediaKit path configuration (line 72 in CMakeLists.txt: `${ZLMEDIAKIT}/lib/libmk_api.so`)
+- Run dependency build scripts first: `./scripts/build_ffmpeg.sh` and `./scripts/build_zlmediakit.sh`
 
 ### Runtime Issues
 - RKNN model compatibility with target hardware
 - Thread pool sizing based on available CPU cores
 - Memory management for large video frames
+- Application crashes may be monitored via memory monitoring script
 
 ### Performance Optimization
 - Adjust thread pool size based on target device capabilities
 - Consider frame skip strategies for real-time performance
-- Monitor memory usage with continuous video processing
+- Monitor memory usage with continuous video processing using provided monitoring tools
+
+### Memory Debugging
+Use the provided memory monitoring script:
+```bash
+./memory_monitor_zlmediakit.sh
+```
+This will generate CSV logs with detailed memory usage statistics.
