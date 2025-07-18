@@ -701,7 +701,7 @@ int ZLPlayer::process_video_rtsp() {
     memset(&config, 0, sizeof(mk_config));
     config.log_mask = LOG_CONSOLE;
 
-    // 🔧 修复: 直接在内存中构建配置，禁用所有网络功能
+    // 🔧 修复: 直接在内存中构建配置，强制禁用统计报告和所有网络功能
     static const char* minimal_config =
         "[general]\n"
         "enableVhost=0\n"
@@ -709,18 +709,36 @@ int ZLPlayer::process_video_rtsp() {
         "flowThreshold=0\n"
         "maxStreamWaitMS=5000\n"
         "mergeWriteMS=0\n"
+        "enableStatistic=0\n"
+        "reportServerUrl=\n"
+        "enable_statistic=0\n"
+        "report_server_url=\n"
+        "\n"
+        "[statistic]\n"
+        "enable=0\n"
+        "server_url=\n"
+        "report_interval=0\n"
         "\n"
         "[hook]\n"
         "enable=0\n"
+        "on_flow_report=\n"
+        "on_server_started=\n"
+        "on_server_keepalive=\n"
         "\n"
         "[http]\n"
         "enable=0\n"
+        "port=0\n"
+        "sslport=0\n"
         "\n"
         "[rtmp]\n"
         "enable=0\n"
+        "port=0\n"
+        "sslport=0\n"
         "\n"
         "[rtsp]\n"
         "enable=1\n"
+        "port=0\n"
+        "sslport=0\n"
         "authBasic=0\n"
         "directProxy=1\n"
         "\n"
@@ -749,14 +767,25 @@ int ZLPlayer::process_video_rtsp() {
             mk_env_init(&config);
             LOGD("mk_env_init completed");
 
-            // 🔧 修复: 在初始化后强制禁用所有网络功能，防止域名解析异常
-            // 禁用统计报告相关功能
+            // 🔧 关键修复: 立即强制禁用统计报告，使用所有可能的配置选项名称
+            // 禁用统计报告相关功能 - 使用所有可能的变体
             mk_set_option("general.enableStatistic", "0");
             mk_set_option("general.reportServerUrl", "");
             mk_set_option("general.enable_statistic", "0");
             mk_set_option("general.report_server_url", "");
+            mk_set_option("general.reportServer", "");
+            mk_set_option("general.report_server", "");
             mk_set_option("statistic.enable", "0");
             mk_set_option("statistic.server_url", "");
+            mk_set_option("statistic.reportServerUrl", "");
+            mk_set_option("statistic.report_server_url", "");
+            mk_set_option("statistic.report_interval", "0");
+            mk_set_option("statistic.report_enable", "0");
+
+            // 强制设置空的报告服务器地址
+            mk_set_option("general.reportServerUrl", "127.0.0.1");  // 设置为本地地址
+            mk_set_option("statistic.server_url", "127.0.0.1");
+            mk_set_option("statistic.reportServerUrl", "127.0.0.1");
 
             // 禁用HTTP服务器和相关功能
             mk_set_option("http.enable", "0");

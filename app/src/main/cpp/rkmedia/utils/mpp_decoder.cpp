@@ -302,11 +302,14 @@ int MppDecoder::Decode(uint8_t *pkt_data, int pkt_size, int pkt_eos)
                     LOGD("get one frame %ld ", (tv.tv_sec * 1000 + tv.tv_usec / 1000));
                     // mpp_frame_get_width(frame);
                     // char *input_data =(char *) mpp_buffer_get_ptr(mpp_frame_get_buffer(frame));
-                    // 🔧 修复: 在callback调用前再次检查frame是否为空
+                    // 🔧 修复: 在callback调用前再次检查frame是否为空，并正确管理MPP缓冲区引用计数
                     if (callback != nullptr && frame != NULL)
                     {
                         MppBuffer buffer = mpp_frame_get_buffer(frame);
                         if (buffer != NULL) {
+                            // 🔧 关键修复: 增加缓冲区引用计数，防止在callback执行期间被释放
+                            mpp_buffer_inc_ref(buffer);
+
                             MppFrameFormat format = mpp_frame_get_fmt(frame);
                             char *data_vir = (char *)mpp_buffer_get_ptr(buffer);
                             int fd = mpp_buffer_get_fd(buffer);
@@ -316,6 +319,9 @@ int MppDecoder::Decode(uint8_t *pkt_data, int pkt_size, int pkt_eos)
                             } else {
                                 LOGD("Warning: data_vir is NULL, skipping callback");
                             }
+
+                            // 🔧 关键修复: callback执行完毕后，减少缓冲区引用计数
+                            mpp_buffer_put(buffer);
                         } else {
                             LOGD("Warning: frame buffer is NULL, skipping callback");
                         }
@@ -333,7 +339,12 @@ int MppDecoder::Decode(uint8_t *pkt_data, int pkt_size, int pkt_eos)
                 // 🔧 修复: 在访问frame前检查是否为空，防止段错误
                 if (frame != NULL) {
                     frm_eos = mpp_frame_get_eos(frame);
+
+                    // 🔧 关键修复: 确保frame被正确释放，避免缓冲区引用计数异常
                     ret = mpp_frame_deinit(&frame);
+                    if (ret != MPP_OK) {
+                        LOGD("Warning: mpp_frame_deinit failed with ret=%d", ret);
+                    }
                     frame = NULL;
                 } else {
                     LOGD("Warning: frame is NULL before mpp_frame_get_eos, skipping");
