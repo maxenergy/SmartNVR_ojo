@@ -6,6 +6,8 @@
 #include <opencv2/opencv.hpp>
 #include <sys/resource.h>
 #include <pthread.h>
+#include <stdexcept>  // 🔧 添加异常处理支持
+#include <exception>  // 🔧 添加异常处理支持
 #include "ZLPlayer.h"
 #include "mpp_err.h"
 #include "cv_draw.h"
@@ -13,6 +15,8 @@
 
 extern pthread_mutex_t windowMutex;     // 静态初始化 所
 extern ANativeWindow *window;
+
+// 🔧 修复: 移除有问题的全局异常处理器
 
 void *rtps_process(void *arg) {
     ZLPlayer *player = (ZLPlayer *) arg;
@@ -696,6 +700,39 @@ int ZLPlayer::process_video_rtsp() {
     mk_config config;
     memset(&config, 0, sizeof(mk_config));
     config.log_mask = LOG_CONSOLE;
+
+    // 🔧 修复: 直接在内存中构建配置，禁用所有网络功能
+    static const char* minimal_config =
+        "[general]\n"
+        "enableVhost=0\n"
+        "mediaServerId=local_server\n"
+        "flowThreshold=0\n"
+        "maxStreamWaitMS=5000\n"
+        "mergeWriteMS=0\n"
+        "\n"
+        "[hook]\n"
+        "enable=0\n"
+        "\n"
+        "[http]\n"
+        "enable=0\n"
+        "\n"
+        "[rtmp]\n"
+        "enable=0\n"
+        "\n"
+        "[rtsp]\n"
+        "enable=1\n"
+        "authBasic=0\n"
+        "directProxy=1\n"
+        "\n"
+        "[protocol]\n"
+        "enable_hls=0\n"
+        "enable_mp4=0\n"
+        "enable_rtmp=0\n"
+        "enable_ts=0\n"
+        "enable_fmp4=0\n";
+
+    config.ini_is_path = 0;  // 使用内存中的配置
+    config.ini = minimal_config;
     
     try {
         // 添加URL预验证
@@ -707,29 +744,109 @@ int ZLPlayer::process_video_rtsp() {
             return -1;
         }
 
-        mk_env_init(&config);
-        LOGD("mk_env_init completed");
+        // 🔧 修复: 添加异常处理包装，捕获ZLMediaKit域名解析异常
+        try {
+            mk_env_init(&config);
+            LOGD("mk_env_init completed");
 
-        mk_player player = mk_player_create();
-        if (player == nullptr) {
-            LOGE("Failed to create mk_player");
+            // 🔧 修复: 在初始化后强制禁用所有网络功能，防止域名解析异常
+            // 禁用统计报告相关功能
+            mk_set_option("general.enableStatistic", "0");
+            mk_set_option("general.reportServerUrl", "");
+            mk_set_option("general.enable_statistic", "0");
+            mk_set_option("general.report_server_url", "");
+            mk_set_option("statistic.enable", "0");
+            mk_set_option("statistic.server_url", "");
+
+            // 禁用HTTP服务器和相关功能
+            mk_set_option("http.enable", "0");
+            mk_set_option("http.port", "0");
+            mk_set_option("http.sslport", "0");
+            mk_set_option("http.notFound", "");
+
+            // 禁用Hook功能
+            mk_set_option("hook.enable", "0");
+            mk_set_option("hook.on_flow_report", "");
+            mk_set_option("hook.on_server_started", "");
+            mk_set_option("hook.on_server_keepalive", "");
+
+            // 禁用协议转换
+            mk_set_option("protocol.enable_hls", "0");
+            mk_set_option("protocol.enable_mp4", "0");
+            mk_set_option("protocol.enable_rtmp", "0");
+            mk_set_option("protocol.enable_ts", "0");
+            mk_set_option("protocol.enable_fmp4", "0");
+
+            // 只保留RTSP客户端功能
+            mk_set_option("rtsp.enable", "1");
+            mk_set_option("rtsp.port", "0");  // 禁用RTSP服务器
+            mk_set_option("rtsp.sslport", "0");
+
+            // 禁用RTMP
+            mk_set_option("rtmp.enable", "0");
+            mk_set_option("rtmp.port", "0");
+            mk_set_option("rtmp.sslport", "0");
+
+            LOGD("ZLMediaKit: All network services disabled, only RTSP client enabled");
+
+        } catch (const std::invalid_argument& e) {
+            LOGD("ZLMediaKit network config error (ignored): %s", e.what());
+            // 继续运行，忽略统计报告功能
+        } catch (const std::exception& e) {
+            LOGD("ZLMediaKit initialization error (ignored): %s", e.what());
+            // 继续运行，忽略统计报告功能
+        } catch (...) {
+            LOGD("ZLMediaKit unknown initialization error (ignored)");
+            // 继续运行，忽略统计报告功能
+        }
+
+        mk_player player = nullptr;
+
+        // 🔧 修复: 在player操作周围添加异常处理，防止网络相关异常
+        try {
+            player = mk_player_create();
+            if (player == nullptr) {
+                LOGE("Failed to create mk_player");
+                return -1;
+            }
+            LOGD("mk_player_create completed");
+
+            // 设置播放器选项以增加稳定性
+            mk_player_set_option(player, "protocol_timeout", "10000000"); // 10秒超时
+            mk_player_set_option(player, "stimeout", "5000000");          // 5秒连接超时
+            mk_player_set_option(player, "max_delay", "500000");          // 最大延迟500ms
+            mk_player_set_option(player, "rtsp_transport", "tcp");        // 强制使用TCP
+
+            mk_player_set_on_result(player, on_mk_play_event_func, &app_ctx);
+            mk_player_set_on_shutdown(player, on_mk_shutdown_func, &app_ctx);
+            LOGD("mk_player callbacks set");
+
+            LOGD("Starting RTSP play with enhanced options: %s", rtsp_url);
+            mk_player_play(player, rtsp_url);
+            LOGD("mk_player_play called");
+
+        } catch (const std::invalid_argument& e) {
+            LOGE("ZLMediaKit player network error (ignored): %s", e.what());
+            if (player) {
+                mk_player_release(player);
+                player = nullptr;
+            }
+            return -1;
+        } catch (const std::exception& e) {
+            LOGE("ZLMediaKit player error (ignored): %s", e.what());
+            if (player) {
+                mk_player_release(player);
+                player = nullptr;
+            }
+            return -1;
+        } catch (...) {
+            LOGE("ZLMediaKit player unknown error (ignored)");
+            if (player) {
+                mk_player_release(player);
+                player = nullptr;
+            }
             return -1;
         }
-        LOGD("mk_player_create completed");
-
-        // 设置播放器选项以增加稳定性
-        mk_player_set_option(player, "protocol_timeout", "10000000"); // 10秒超时
-        mk_player_set_option(player, "stimeout", "5000000");          // 5秒连接超时
-        mk_player_set_option(player, "max_delay", "500000");          // 最大延迟500ms
-        mk_player_set_option(player, "rtsp_transport", "tcp");        // 强制使用TCP
-
-        mk_player_set_on_result(player, on_mk_play_event_func, &app_ctx);
-        mk_player_set_on_shutdown(player, on_mk_shutdown_func, &app_ctx);
-        LOGD("mk_player callbacks set");
-
-        LOGD("Starting RTSP play with enhanced options: %s", rtsp_url);
-        mk_player_play(player, rtsp_url);
-        LOGD("mk_player_play called");
 
         // 添加连接状态检查和错误恢复
         int status_check_count = 0;

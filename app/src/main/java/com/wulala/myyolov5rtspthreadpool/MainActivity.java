@@ -71,6 +71,10 @@ public class MainActivity extends AppCompatActivity {
         // Initialize native components
         assetManager = getAssets();
         setNativeAssetManager(assetManager);
+
+        // 🔧 修复: 复制ZLMediaKit配置文件到应用私有目录
+        copyZLMediaKitConfig();
+
         nativePlayerObj = prepareNative();
         
         // Initialize multi-camera support
@@ -397,6 +401,28 @@ public class MainActivity extends AppCompatActivity {
 
         // 启动第一次检查
         handler.postDelayed(stuckDetectionRunnable, 30000);
+    }
+
+    // 🔧 修复: 复制ZLMediaKit配置文件到应用私有目录
+    private void copyZLMediaKitConfig() {
+        try {
+            java.io.InputStream inputStream = getAssets().open("zlmediakit_config.ini");
+            java.io.File configFile = new java.io.File(getFilesDir(), "zlmediakit_config.ini");
+
+            java.io.FileOutputStream outputStream = new java.io.FileOutputStream(configFile);
+            byte[] buffer = new byte[1024];
+            int length;
+            while ((length = inputStream.read(buffer)) > 0) {
+                outputStream.write(buffer, 0, length);
+            }
+
+            outputStream.close();
+            inputStream.close();
+
+            android.util.Log.d("MainActivity", "ZLMediaKit config file copied to: " + configFile.getAbsolutePath());
+        } catch (java.io.IOException e) {
+            android.util.Log.e("MainActivity", "Failed to copy ZLMediaKit config file: " + e.getMessage());
+        }
     }
 
 }
