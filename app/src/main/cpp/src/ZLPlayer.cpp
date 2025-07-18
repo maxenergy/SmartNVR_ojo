@@ -61,7 +61,7 @@ void ZLPlayer::initializeModelData(char* modelData, int modelSize) {
 
         // 复制新的模型数据
         this->modelFileSize = modelSize;
-        this->modelFileContent = (char *) malloc(modelSize);
+        this->modelFileContent = new char[modelSize];  // 🔧 修复: 使用new[]替代malloc
         memcpy(this->modelFileContent, modelData, modelSize);
 
         // 重新初始化YOLOv5线程池，使用动态线程池大小
@@ -870,7 +870,7 @@ ZLPlayer::~ZLPlayer() {
 
     // 7. 释放模型数据
     if (modelFileContent != nullptr) {
-        free(modelFileContent);
+        delete[] modelFileContent;  // 🔧 修复: 使用delete[]释放new[]分配的内存
         modelFileContent = nullptr;
     }
 
