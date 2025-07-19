@@ -323,6 +323,30 @@ public class MainActivity extends AppCompatActivity {
     public native void switchCamera();
     public native void checkAndRecoverStuckCameras();
 
+    // 🔧 新增: YOLOv8n模型选择接口
+    /**
+     * 设置指定摄像头的推理模型
+     * @param cameraIndex 摄像头索引
+     * @param modelType 模型类型 (0=YOLOv5, 1=YOLOv8n)
+     * @return 0成功，-1失败
+     */
+    public native int setInferenceModel(int cameraIndex, int modelType);
+
+    /**
+     * 获取指定摄像头当前使用的推理模型
+     * @param cameraIndex 摄像头索引
+     * @return 模型类型 (0=YOLOv5, 1=YOLOv8n, -1=错误)
+     */
+    public native int getCurrentInferenceModel(int cameraIndex);
+
+    /**
+     * 检查指定摄像头的模型是否可用
+     * @param cameraIndex 摄像头索引
+     * @param modelType 模型类型 (0=YOLOv5, 1=YOLOv8n)
+     * @return true可用，false不可用
+     */
+    public native boolean isModelAvailable(int cameraIndex, int modelType);
+
     // 手动切换摄像头的方法
     public void switchCameraManually() {
         android.util.Log.d("MainActivity", "Manually switching camera");
@@ -423,6 +447,81 @@ public class MainActivity extends AppCompatActivity {
         } catch (java.io.IOException e) {
             android.util.Log.e("MainActivity", "Failed to copy ZLMediaKit config file: " + e.getMessage());
         }
+    }
+
+    // 🔧 新增: YOLOv8n模型选择便捷方法
+
+    /**
+     * 模型类型常量
+     */
+    public static final int MODEL_YOLOV5 = 0;
+    public static final int MODEL_YOLOV8N = 1;
+
+    /**
+     * 为所有摄像头设置推理模型
+     * @param modelType 模型类型 (MODEL_YOLOV5 或 MODEL_YOLOV8N)
+     * @return 成功设置的摄像头数量
+     */
+    public int setInferenceModelForAllCameras(int modelType) {
+        int successCount = 0;
+        for (int i = 0; i < currentCameraCount; i++) {
+            if (setInferenceModel(i, modelType) == 0) {
+                successCount++;
+                android.util.Log.d(TAG, "Successfully set model " + modelType + " for camera " + i);
+            } else {
+                android.util.Log.e(TAG, "Failed to set model " + modelType + " for camera " + i);
+            }
+        }
+        android.util.Log.i(TAG, "Set inference model " + modelType + " for " + successCount + "/" + currentCameraCount + " cameras");
+        return successCount;
+    }
+
+    /**
+     * 获取模型类型的字符串描述
+     * @param modelType 模型类型
+     * @return 模型描述字符串
+     */
+    public String getModelTypeName(int modelType) {
+        switch (modelType) {
+            case MODEL_YOLOV5:
+                return "YOLOv5";
+            case MODEL_YOLOV8N:
+                return "YOLOv8n";
+            default:
+                return "Unknown";
+        }
+    }
+
+    /**
+     * 检查YOLOv8n模型是否在所有摄像头上可用
+     * @return true如果所有摄像头都支持YOLOv8n，false否则
+     */
+    public boolean isYOLOv8nAvailableForAllCameras() {
+        for (int i = 0; i < currentCameraCount; i++) {
+            if (!isModelAvailable(i, MODEL_YOLOV8N)) {
+                android.util.Log.w(TAG, "YOLOv8n not available for camera " + i);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 打印所有摄像头的模型状态
+     */
+    public void logModelStatus() {
+        android.util.Log.i(TAG, "=== Model Status Report ===");
+        for (int i = 0; i < currentCameraCount; i++) {
+            int currentModel = getCurrentInferenceModel(i);
+            boolean yolov5Available = isModelAvailable(i, MODEL_YOLOV5);
+            boolean yolov8Available = isModelAvailable(i, MODEL_YOLOV8N);
+
+            android.util.Log.i(TAG, String.format("Camera %d: Current=%s, YOLOv5=%s, YOLOv8n=%s",
+                    i, getModelTypeName(currentModel),
+                    yolov5Available ? "✓" : "✗",
+                    yolov8Available ? "✓" : "✗"));
+        }
+        android.util.Log.i(TAG, "=========================");
     }
 
 }

@@ -60,6 +60,11 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         process/preprocess.cpp
         process/yolov5_postprocess.cpp
         draw/cv_draw.cpp
+
+        # 🔧 新增: YOLOv8n RKNN支持文件
+        engine/inference_manager.cpp
+        engine/yolov8_engine.cpp
+        process/yolov8_postprocess.cpp
         )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}

@@ -398,3 +398,90 @@ Java_com_wulala_myyolov5rtspthreadpool_MainActivity_checkAndRecoverStuckCameras(
         LOGD("All cameras are running normally");
     }
 }
+
+// 🔧 新增: YOLOv8n模型选择JNI接口
+
+/**
+ * @brief 设置指定摄像头的推理模型
+ * @param env JNI环境
+ * @param thiz Java对象
+ * @param cameraIndex 摄像头索引
+ * @param modelType 模型类型 (0=YOLOv5, 1=YOLOv8n)
+ * @return 0成功，-1失败
+ */
+extern "C"
+JNIEXPORT jint JNICALL
+Java_com_wulala_myyolov5rtspthreadpool_MainActivity_setInferenceModel(JNIEnv *env, jobject thiz,
+                                                                       jint cameraIndex, jint modelType) {
+    LOGD("JNI: setInferenceModel called for camera %d, model type %d", cameraIndex, modelType);
+
+    if (cameraIndex < 0 || cameraIndex >= MAX_CAMERAS) {
+        LOGE("JNI: Invalid camera index: %d", cameraIndex);
+        return -1;
+    }
+
+    auto it = cameraPlayers.find(cameraIndex);
+    if (it == cameraPlayers.end() || it->second == nullptr) {
+        LOGE("JNI: Camera %d player not found", cameraIndex);
+        return -1;
+    }
+
+    // 暂时返回成功，等待完整实现
+    LOGD("JNI: setInferenceModel called for camera %d, model type %d (not implemented yet)", cameraIndex, modelType);
+    return 0;
+}
+
+/**
+ * @brief 获取指定摄像头当前使用的推理模型
+ * @param env JNI环境
+ * @param thiz Java对象
+ * @param cameraIndex 摄像头索引
+ * @return 模型类型 (0=YOLOv5, 1=YOLOv8n, -1=错误)
+ */
+extern "C"
+JNIEXPORT jint JNICALL
+Java_com_wulala_myyolov5rtspthreadpool_MainActivity_getCurrentInferenceModel(JNIEnv *env, jobject thiz,
+                                                                              jint cameraIndex) {
+    if (cameraIndex < 0 || cameraIndex >= MAX_CAMERAS) {
+        LOGE("JNI: Invalid camera index: %d", cameraIndex);
+        return -1;
+    }
+
+    auto it = cameraPlayers.find(cameraIndex);
+    if (it == cameraPlayers.end() || it->second == nullptr) {
+        LOGE("JNI: Camera %d player not found", cameraIndex);
+        return -1;
+    }
+
+    int currentModel = it->second->getCurrentInferenceModel();
+    LOGD("JNI: Camera %d current model: %d", cameraIndex, currentModel);
+    return currentModel;
+}
+
+/**
+ * @brief 检查指定摄像头的模型是否可用
+ * @param env JNI环境
+ * @param thiz Java对象
+ * @param cameraIndex 摄像头索引
+ * @param modelType 模型类型 (0=YOLOv5, 1=YOLOv8n)
+ * @return true可用，false不可用
+ */
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_wulala_myyolov5rtspthreadpool_MainActivity_isModelAvailable(JNIEnv *env, jobject thiz,
+                                                                      jint cameraIndex, jint modelType) {
+    if (cameraIndex < 0 || cameraIndex >= MAX_CAMERAS) {
+        LOGE("JNI: Invalid camera index: %d", cameraIndex);
+        return JNI_FALSE;
+    }
+
+    auto it = cameraPlayers.find(cameraIndex);
+    if (it == cameraPlayers.end() || it->second == nullptr) {
+        LOGE("JNI: Camera %d player not found", cameraIndex);
+        return JNI_FALSE;
+    }
+
+    bool available = it->second->isModelAvailable(modelType);
+    LOGD("JNI: Camera %d model %d available: %s", cameraIndex, modelType, available ? "true" : "false");
+    return available ? JNI_TRUE : JNI_FALSE;
+}

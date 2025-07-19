@@ -11,6 +11,8 @@
 #include "ZLPlayer.h"
 #include "mpp_err.h"
 #include "cv_draw.h"
+#include "../engine/inference_manager.h"  // 🔧 新增: 统一推理管理器
+#include "../types/model_config.h"        // 🔧 新增: 模型配置
 // Yolov8ThreadPool *yolov8_thread_pool;   // 线程池
 
 extern pthread_mutex_t windowMutex;     // 静态初始化 所
@@ -337,6 +339,27 @@ ZLPlayer::ZLPlayer(char *modelFileData, int modelDataLen) {
         LOGD("YOLOv5 thread pool initialized with %d threads", app_ctx.thread_pool_size);
     } else {
         LOGW("YOLOv5 thread pool created without model data - will initialize later");
+    }
+
+    // 🔧 新增: 初始化统一推理管理器
+    app_ctx.inference_manager = new InferenceManager();
+    if (app_ctx.inference_manager) {
+        // 配置YOLOv5模型
+        ModelConfig yolov5_config = ModelConfig::getYOLOv5Config();
+
+        // 配置YOLOv8n模型（可选）
+        ModelConfig yolov8_config = ModelConfig::getYOLOv8nConfig();
+
+        // 初始化推理管理器（YOLOv5必须，YOLOv8n可选）
+        if (app_ctx.inference_manager->initialize(yolov5_config, &yolov8_config) == 0) {
+            LOGD("Unified inference manager initialized successfully");
+            // 默认使用YOLOv5模型（保持向后兼容）
+            app_ctx.inference_manager->setCurrentModel(ModelType::YOLOV5);
+        } else {
+            LOGW("Unified inference manager initialization failed, using legacy YOLOv5 only");
+            delete app_ctx.inference_manager;
+            app_ctx.inference_manager = nullptr;
+        }
     }
 
     // app_ctx.mppDataThreadPool->setUpWithModelData(THREAD_POOL, this->modelFileContent, this->modelFileSize);
@@ -1001,6 +1024,14 @@ ZLPlayer::~ZLPlayer() {
         LOGD("Cleaned up YOLOv5 thread pool");
     }
 
+    // 🔧 新增: 清理统一推理管理器
+    if (app_ctx.inference_manager) {
+        app_ctx.inference_manager->release();
+        delete app_ctx.inference_manager;
+        app_ctx.inference_manager = nullptr;
+        LOGD("Cleaned up unified inference manager");
+    }
+
     // 5. 清理MPP解码器
     if (app_ctx.decoder) {
         delete app_ctx.decoder;
@@ -1347,3 +1378,42 @@ void ZLPlayer::mpp_decoder_frame_callback(void *userdata, int width_stride, int 
 //void ZLPlayer::setRenderCallback(RenderCallback renderCallback_) {
 //    this->renderCallback = renderCallback_;
 //}
+
+// 🔧 新增: 模型选择接口实现
+int ZLPlayer::setInferenceModel(int model_type) {
+    if (!app_ctx.inference_manager) {
+        LOGE("Inference manager not initialized");
+        return -1;
+    }
+
+    ModelType type = static_cast<ModelType>(model_type);
+    int ret = app_ctx.inference_manager->setCurrentModel(type);
+
+    if (ret == 0) {
+        LOGD("Successfully switched to model type: %d", model_type);
+    } else {
+        LOGE("Failed to switch to model type: %d", model_type);
+    }
+
+    return ret;
+}
+
+int ZLPlayer::getCurrentInferenceModel() {
+    if (!app_ctx.inference_manager) {
+        LOGE("Inference manager not initialized");
+        return -1;
+    }
+
+    ModelType current = app_ctx.inference_manager->getCurrentModel();
+    return static_cast<int>(current);
+}
+
+bool ZLPlayer::isModelAvailable(int model_type) {
+    if (!app_ctx.inference_manager) {
+        LOGE("Inference manager not initialized");
+        return false;
+    }
+
+    ModelType type = static_cast<ModelType>(model_type);
+    return app_ctx.inference_manager->isModelInitialized(type);
+}

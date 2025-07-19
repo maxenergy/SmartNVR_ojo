@@ -1,0 +1,26 @@
+YOLOv8n自定义模型部署报告
+========================
+
+部署时间: Sat Jul 19 01:16:37 PM CST 2025
+设备信息: ZC-3588A
+Android版本: 12
+
+部署文件:
+- 模型文件: best_rk3588.rknn (12837478 bytes)
+- 标签文件: best_labels.txt (7 bytes)
+
+部署路径: /data/data/com.wulala.myyolov5rtspthreadpool/files/
+
+模型配置:
+- 类别数量: 1 (person)
+- 输入尺寸: 640x640x3
+- 置信度阈值: 0.5
+- NMS阈值: 0.6
+
+部署状态: 成功
+
+下一步:
+1. 启动应用测试YOLOv8n功能
+2. 使用Java接口切换到YOLOv8n模型
+3. 验证人员检测功能
+

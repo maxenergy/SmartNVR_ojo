@@ -19,11 +19,17 @@
 #include <map>
 #include <string>
 
+// 🔧 新增: 前向声明统一推理管理器
+class InferenceManager;
+
 typedef struct g_rknn_app_context_t {
     FILE *out_fp;
     MppDecoder *decoder;
     Yolov5ThreadPool *yolov5ThreadPool;
     RenderFrameQueue *renderFrameQueue;
+
+    // 🔧 新增: 统一推理管理器（支持YOLOv5和YOLOv8n）
+    InferenceManager *inference_manager;
     // MppEncoder *encoder;
     // mk_media media;
     // mk_pusher pusher;
@@ -118,9 +124,30 @@ public:
     void display();
 
     void get_detect_result();
-    
+
     // 渲染到专用窗口（用于多摄像头）
     void renderFrameToWindow(uint8_t *src_data, int width, int height, int src_line_size, ANativeWindow *targetWindow);
+
+    // 🔧 新增: 模型选择接口
+    /**
+     * @brief 设置当前使用的推理模型
+     * @param model_type 0=YOLOv5, 1=YOLOv8n
+     * @return 0成功，-1失败
+     */
+    int setInferenceModel(int model_type);
+
+    /**
+     * @brief 获取当前使用的推理模型
+     * @return 0=YOLOv5, 1=YOLOv8n, -1=未初始化
+     */
+    int getCurrentInferenceModel();
+
+    /**
+     * @brief 检查指定模型是否可用
+     * @param model_type 0=YOLOv5, 1=YOLOv8n
+     * @return true可用，false不可用
+     */
+    bool isModelAvailable(int model_type);
 };
 
 #endif //AIBOX_ZLPLAYER_H
