@@ -1,8 +1,9 @@
 #include "face_analysis_manager.h"
+#include "inspireface_wrapper.h"
 #include "log4c.h"
 #include <chrono>
 
-FaceAnalysisManager::FaceAnalysisManager() 
+FaceAnalysisManager::FaceAnalysisManager()
     : m_initialized(false)
     , m_inspireFaceInitialized(false)
     , m_frameCounter(0)
@@ -12,7 +13,12 @@ FaceAnalysisManager::FaceAnalysisManager()
     , m_pipelineProcessMethod(nullptr)
     , m_getFaceAttributeMethod(nullptr)
     , m_releaseImageStreamMethod(nullptr) {
-    
+
+    // 创建InspireFace组件
+    m_inspireFaceSession.reset(new InspireFaceSession());
+    m_imageProcessor.reset(new InspireFaceImageProcessor());
+    m_faceDetector.reset(new InspireFaceDetector());
+
     LOGI("FaceAnalysisManager created");
 }
 
@@ -186,16 +192,32 @@ bool FaceAnalysisManager::shouldAnalyzeCurrentFrame() {
 
 bool FaceAnalysisManager::initializeInspireFace(const std::string& modelPath) {
     LOGI("Initializing InspireFace with model: %s", modelPath.c_str());
-    
-    // TODO: 实现InspireFace初始化
-    // 这里需要通过JNI调用Java层的InspireFace接口
-    // 1. 获取JNI环境
-    // 2. 找到InspireFace类和方法
-    // 3. 调用初始化方法
-    // 4. 缓存必要的方法ID
-    
-    // 暂时返回true，实际实现时需要真正的初始化逻辑
-    LOGI("InspireFace initialization placeholder - returning true");
+
+    // 初始化InspireFace库
+    if (!InspireFaceUtils::initializeLibrary()) {
+        LOGE("Failed to initialize InspireFace library");
+        return false;
+    }
+
+    // 检查模型文件
+    if (!InspireFaceUtils::checkModelFiles(modelPath)) {
+        LOGE("Model files not found at: %s", modelPath.c_str());
+        return false;
+    }
+
+    // 初始化会话
+    if (!m_inspireFaceSession->initialize(modelPath, true)) {
+        LOGE("Failed to initialize InspireFace session");
+        return false;
+    }
+
+    // 初始化检测器
+    if (!m_faceDetector->initialize(m_inspireFaceSession.get())) {
+        LOGE("Failed to initialize face detector");
+        return false;
+    }
+
+    LOGI("InspireFace initialized successfully");
     return true;
 }
 
@@ -222,34 +244,63 @@ void FaceAnalysisManager::releaseJNIResources() {
 bool FaceAnalysisManager::analyzePersonROI(const cv::Mat& image,
                                           const cv::Rect& personRect,
                                           FaceAnalysisResult& result) {
-    LOGD("Analyzing person ROI: [%d,%d,%d,%d]", 
+    LOGD("Analyzing person ROI: [%d,%d,%d,%d]",
          personRect.x, personRect.y, personRect.width, personRect.height);
-    
+
     // 提取人员区域
     cv::Mat personROI = image(personRect);
-    
-    // TODO: 实现InspireFace分析
-    // 1. 转换cv::Mat到InspireFace格式
-    // 2. 调用InspireFace人脸检测
-    // 3. 调用InspireFace属性分析
+
+    // 1. 创建图像流
+    void* imageStream = nullptr;
+    if (!m_imageProcessor->createImageStreamFromMat(personROI, &imageStream)) {
+        LOGE("Failed to create image stream from person ROI");
+        return false;
+    }
+
+    // 2. 执行人脸检测和属性分析
+    std::vector<FaceDetectionResult> faceResults;
+    std::vector<FaceAttributeResult> attributeResults;
+
+    bool success = m_faceDetector->detectAndAnalyze(imageStream, faceResults, attributeResults);
+
+    // 3. 释放图像流
+    m_imageProcessor->releaseImageStream(imageStream);
+
+    if (!success) {
+        LOGE("Face detection and analysis failed");
+        return false;
+    }
+
     // 4. 转换结果格式
-    
-    // 暂时创建模拟结果
-    FaceInfo mockFace;
-    mockFace.faceRect = cv::Rect(personRect.width/4, personRect.height/4, 
-                                personRect.width/2, personRect.height/2);
-    mockFace.confidence = 0.85f;
-    
-    // 模拟属性
-    mockFace.attributes.gender = 1; // 男性
-    mockFace.attributes.genderConfidence = 0.9f;
-    mockFace.attributes.ageBracket = 3; // 20-29岁
-    mockFace.attributes.ageConfidence = 0.8f;
-    mockFace.attributes.race = 1; // 亚洲人
-    mockFace.attributes.raceConfidence = 0.85f;
-    
-    result.faces.push_back(mockFace);
-    
+    result.faces.clear();
+    for (size_t i = 0; i < faceResults.size() && i < attributeResults.size(); ++i) {
+        FaceInfo faceInfo;
+
+        // 转换人脸位置（相对于原图像的坐标）
+        faceInfo.faceRect = cv::Rect(
+            personRect.x + faceResults[i].faceRect.x,
+            personRect.y + faceResults[i].faceRect.y,
+            faceResults[i].faceRect.width,
+            faceResults[i].faceRect.height
+        );
+        faceInfo.confidence = faceResults[i].confidence;
+
+        // 转换属性信息
+        faceInfo.attributes.gender = attributeResults[i].gender;
+        faceInfo.attributes.genderConfidence = attributeResults[i].genderConfidence;
+        faceInfo.attributes.ageBracket = attributeResults[i].ageBracket;
+        faceInfo.attributes.ageConfidence = attributeResults[i].ageConfidence;
+        faceInfo.attributes.race = attributeResults[i].race;
+        faceInfo.attributes.raceConfidence = attributeResults[i].raceConfidence;
+
+        result.faces.push_back(faceInfo);
+
+        LOGD("Face %zu: %s, %s, conf=%.2f", i,
+             attributeResults[i].getGenderString().c_str(),
+             attributeResults[i].getAgeBracketString().c_str(),
+             faceInfo.confidence);
+    }
+
     LOGD("Person ROI analysis completed with %zu faces", result.faces.size());
     return true;
 }

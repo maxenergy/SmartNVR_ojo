@@ -73,7 +73,9 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         # 🚀 新增: InspireFace集成模块
         engine/extended_inference_manager.cpp
         face/face_analysis_manager.cpp
+        face/inspireface_wrapper.cpp
         statistics/statistics_manager.cpp
+        jni/extended_inference_jni.cpp
         )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}

@@ -1,0 +1,424 @@
+tag: Gundam_RK3588
+version: 4.0
+major: t4  
+release: 2025-06-14
+
+# Recommended parameter values based on experience
+similarity_converter:
+  threshold: 0.32
+  middle_score: 0.6
+  steepness: 10.0
+  output_min: 0.02
+  output_max: 1.0
+
+# Face Detection pixel size
+face_detect_pixel_list:
+  - 160
+  - 320
+  - 640
+
+# Face Detection model
+face_detect_model_list:
+  - face_detect_160
+  - face_detect_320
+  - face_detect_640
+
+
+face_detect_640:
+  name: _00_scrfd_2_5g_bnkps_shape640x640_rk3588
+  fullname: _00_scrfd_2_5g_bnkps_shape640x640_rk3588.rknn
+  version: 0.1
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: false
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: input
+  outputs_layers:
+    - output
+    - output1
+    - output2
+    - output3
+    - output4
+    - output5
+    - output6
+    - output7
+    - output8
+  input_size:
+    - 640
+    - 640
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0
+
+face_detect_320:
+  name: _00_scrfd_2_5g_bnkps_shape320x320_rk3588
+  fullname: _00_scrfd_2_5g_bnkps_shape320x320_rk3588.rknn
+  version: 0.1
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: false
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: input
+  outputs_layers:
+    - output
+    - output1
+    - output2
+    - output3
+    - output4
+    - output5
+    - output6
+    - output7
+    - output8
+  input_size:
+    - 320
+    - 320
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0
+
+face_detect_160:
+  name: _00_scrfd_2_5g_bnkps_shape160x160_rk3588
+  fullname: _00_scrfd_2_5g_bnkps_shape160x160_rk3588.rknn
+  version: 0.1
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: false
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: input
+  outputs_layers:
+    - output
+    - output1
+    - output2
+    - output3
+    - output4
+    - output5
+    - output6
+    - output7
+    - output8
+  input_size:
+    - 160
+    - 160
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0
+
+landmark:
+  name: _01_hyplmkv2_0.25_112x_rk3588
+  fullname: _01_hyplmkv2_0.25_112x_rk3588.rknn
+  version: 1.0
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: false
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: input
+  outputs_layers:
+    - output
+  input_size:
+    - 112
+    - 112
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0
+
+refine_net:
+  name: _04_rnet_rk3588
+  fullname: _04_rnet_rk3588.rknn
+  version: 0.1
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: true
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: data
+  outputs_layers:
+    - conv5-1/Softmax
+    - conv5-2/BiasAdd
+  input_size:
+    - 24
+    - 24
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0
+
+pose_quality:
+  name: _07_pose-quality_rk3588
+  fullname: _07_pose-quality_rk3588.rknn
+  version: 0.1
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: true
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: data
+  outputs_layers:
+    - fc1
+  input_size:
+    - 96
+    - 96
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0
+
+feature:
+  name: _03_r18_Glint360K_fixed_rk3588
+  fullname: _03_r18_Glint360K_fixed_rk3588.rknn
+  version: 0.1
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: true    # RK requires rgb input
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: input
+  outputs_layers:
+    - output
+  input_size:
+    - 112
+    - 112
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0
+
+mask_detect:
+  name: _05_facemask_mb_025_cut_rk3588
+  fullname: _05_facemask_mb_025_cut_rk3588.rknn
+  version: 0.1
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: true
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: input_1
+  outputs_layers:
+    - activation_1/Softmax
+  input_size:
+    - 96
+    - 96
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0
+
+rgb_anti_spoofing:
+  name: _06_msafa27_rk3588
+  fullname: _06_msafa27_rk3588.rknn
+  version: 0.1
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: true
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: data
+  outputs_layers:
+    - softmax
+  input_size:
+    - 112
+    - 112
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0
+
+face_attribute:
+  name: _08_fairface_model_rk3588
+  fullname: _08_fairface_model_rk3588.rknn
+  version: 0.1
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: true    
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: input.1
+  outputs_layers:
+    - 547
+    - 548
+    - 549
+  input_size:
+    - 112
+    - 112
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0
+
+blink_predict:
+  name: _09_blink_crop
+  fullname: _09_blink_crop.mnn
+  version: 0.1
+  model_type: MNN
+  infer_engine: MNN
+  infer_device: MNN
+  infer_backend: CPU
+  input_channel: 1
+  input_image_channel: 1
+  nchw: true
+  swap_color: false
+  data_type: image
+  input_tensor_type: float32
+  output_tensor_type: float32
+  threads: 1
+  input_layer: input
+  outputs_layers:
+    - output
+  input_size:
+    - 64
+    - 64
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 0.003921568627
+    - 0.003921568627
+    - 0.003921568627
+
+face_emotion:
+  name: _10_emotion_rk3588
+  fullname: _10_emotion_rk3588.rknn
+  version: 0.1
+  model_type: RKNN
+  infer_engine: RKNN
+  infer_device: RKNPU
+  infer_backend: RKNPU
+  input_channel: 3
+  input_image_channel: 3
+  nchw: false
+  swap_color: false
+  data_type: image
+  input_tensor_type: uint8
+  output_tensor_type: float32
+  threads: 1
+  input_layer: input
+  outputs_layers:
+    - output
+  input_size:
+    - 112
+    - 112
+  mean:
+    - 0.0
+    - 0.0
+    - 0.0
+  norm:
+    - 1.0
+    - 1.0
+    - 1.0

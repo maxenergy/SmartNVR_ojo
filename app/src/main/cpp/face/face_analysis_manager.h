@@ -13,6 +13,9 @@
 
 // 前向声明
 struct Detection;
+class InspireFaceSession;
+class InspireFaceImageProcessor;
+class InspireFaceDetector;
 
 // 人脸信息结构
 struct FaceInfo {
@@ -164,6 +167,11 @@ private:
     jmethodID m_pipelineProcessMethod = nullptr;
     jmethodID m_getFaceAttributeMethod = nullptr;
     jmethodID m_releaseImageStreamMethod = nullptr;
+
+    // InspireFace组件
+    std::unique_ptr<InspireFaceSession> m_inspireFaceSession;
+    std::unique_ptr<InspireFaceImageProcessor> m_imageProcessor;
+    std::unique_ptr<InspireFaceDetector> m_faceDetector;
 
 public:
     FaceAnalysisManager();
