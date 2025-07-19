@@ -7,7 +7,12 @@
 #include <mutex>
 #include <string>
 #include <chrono>
-#include "types/inference_result.h"
+#include <jni.h>
+#include "types/model_config.h"
+#include "types/yolo_datatype.h"
+
+// 前向声明
+struct Detection;
 
 // 人脸信息结构
 struct FaceInfo {
@@ -127,7 +132,7 @@ class FaceAnalysisManager {
 private:
     bool m_initialized;
     bool m_inspireFaceInitialized;
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
     
     FaceAnalysisConfig m_config;
     

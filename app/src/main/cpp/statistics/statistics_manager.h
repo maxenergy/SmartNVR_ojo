@@ -204,28 +204,32 @@ struct StatisticsConfig {
 
 // 统计数据管理器
 class StatisticsManager {
-private:
-    StatisticsData m_currentStats;
-    HistoricalStatistics m_historicalStats;
-    StatisticsConfig m_config;
-    
-    std::mutex m_mutex;
-    
-    // 自动重置定时器
-    std::chrono::steady_clock::time_point m_lastResetTime;
-    std::chrono::steady_clock::time_point m_lastSnapshotTime;
-    
-    // 性能统计
+public:
+    // 性能统计结构
     struct PerformanceMetrics {
         int updateCount = 0;
         std::chrono::milliseconds totalUpdateTime{0};
         std::chrono::steady_clock::time_point lastUpdateTime;
-        
+
         double getAverageUpdateTime() const {
             if (updateCount == 0) return 0.0;
             return static_cast<double>(totalUpdateTime.count()) / updateCount;
         }
-    } m_performanceMetrics;
+    };
+
+private:
+    StatisticsData m_currentStats;
+    HistoricalStatistics m_historicalStats;
+    StatisticsConfig m_config;
+
+    mutable std::mutex m_mutex;
+
+    // 自动重置定时器
+    std::chrono::steady_clock::time_point m_lastResetTime;
+    std::chrono::steady_clock::time_point m_lastSnapshotTime;
+
+    // 性能统计实例
+    PerformanceMetrics m_performanceMetrics;
 
 public:
     StatisticsManager();

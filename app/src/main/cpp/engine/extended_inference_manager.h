@@ -77,25 +77,8 @@ struct ExtendedInferenceResult {
  * 实现目标检测 → 人员筛选 → 人脸识别 → 属性分析的级联流程
  */
 class ExtendedInferenceManager {
-private:
-    // 核心推理管理器
-    std::unique_ptr<InferenceManager> m_inferenceManager;
-    
-    // 人脸分析和统计模块
-    std::unique_ptr<FaceAnalysisManager> m_faceAnalysisManager;
-    std::unique_ptr<StatisticsManager> m_statisticsManager;
-    
-    // 级联检测配置
-    CascadeDetectionConfig m_cascadeConfig;
-    
-    // 初始化状态
-    bool m_initialized;
-    bool m_faceAnalysisEnabled;
-    bool m_statisticsEnabled;
-    
-    std::mutex m_mutex;
-    
-    // 性能监控
+public:
+    // 性能监控结构
     struct PerformanceMonitor {
         int totalInferenceCount = 0;
         int successfulInferenceCount = 0;
@@ -118,7 +101,28 @@ private:
             if (totalInferenceCount == 0) return 0.0;
             return static_cast<double>(successfulInferenceCount) / totalInferenceCount * 100.0;
         }
-    } m_performanceMonitor;
+    };
+
+private:
+    // 核心推理管理器
+    std::unique_ptr<InferenceManager> m_inferenceManager;
+
+    // 人脸分析和统计模块
+    std::unique_ptr<FaceAnalysisManager> m_faceAnalysisManager;
+    std::unique_ptr<StatisticsManager> m_statisticsManager;
+
+    // 级联检测配置
+    CascadeDetectionConfig m_cascadeConfig;
+
+    // 初始化状态
+    bool m_initialized;
+    bool m_faceAnalysisEnabled;
+    bool m_statisticsEnabled;
+
+    mutable std::mutex m_mutex;
+
+    // 性能监控实例
+    PerformanceMonitor m_performanceMonitor;
 
 public:
     ExtendedInferenceManager();

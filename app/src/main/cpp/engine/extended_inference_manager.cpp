@@ -1,20 +1,14 @@
 #include "extended_inference_manager.h"
-#include <android/log.h>
+#include "log4c.h"
 #include <algorithm>
-
-#define TAG "ExtendedInferenceManager"
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 ExtendedInferenceManager::ExtendedInferenceManager()
     : m_initialized(false)
     , m_faceAnalysisEnabled(false)
     , m_statisticsEnabled(false) {
     
-    // 创建核心推理管理器
-    m_inferenceManager = std::make_unique<InferenceManager>();
+    // 创建核心推理管理器 (C++11兼容)
+    m_inferenceManager.reset(new InferenceManager());
     
     // 初始化默认配置
     initializeDefaultConfigs();
@@ -27,19 +21,19 @@ ExtendedInferenceManager::~ExtendedInferenceManager() {
     LOGI("ExtendedInferenceManager destroyed");
 }
 
-bool ExtendedInferenceManager::initialize(const ModelConfig& yolov5_config, 
+bool ExtendedInferenceManager::initialize(const ModelConfig& yolov5_config,
                                          const ModelConfig* yolov8_config) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    
+
     if (m_initialized) {
         LOGW("ExtendedInferenceManager already initialized");
         return true;
     }
-    
+
     LOGI("Initializing ExtendedInferenceManager");
-    
+
     // 初始化核心推理管理器
-    if (!m_inferenceManager->initialize()) {
+    if (m_inferenceManager->initialize(yolov5_config, yolov8_config) != 0) {
         LOGE("Failed to initialize core InferenceManager");
         return false;
     }
@@ -119,8 +113,8 @@ int ExtendedInferenceManager::setCurrentModel(ModelType modelType) {
         LOGE("ExtendedInferenceManager not initialized");
         return -1;
     }
-    
-    return m_inferenceManager->setCurrentModel(modelType) ? 0 : -1;
+
+    return m_inferenceManager->setCurrentModel(modelType);
 }
 
 ModelType ExtendedInferenceManager::getCurrentModel() const {
@@ -135,8 +129,8 @@ bool ExtendedInferenceManager::isModelInitialized(ModelType type) const {
     if (!m_initialized || !m_inferenceManager) {
         return false;
     }
-    
-    return m_inferenceManager->isModelAvailable(type);
+
+    return m_inferenceManager->isModelInitialized(type);
 }
 
 bool ExtendedInferenceManager::initializeFaceAnalysis(const std::string& modelPath) {
@@ -145,7 +139,7 @@ bool ExtendedInferenceManager::initializeFaceAnalysis(const std::string& modelPa
     LOGI("Initializing face analysis with model: %s", modelPath.c_str());
     
     if (!m_faceAnalysisManager) {
-        m_faceAnalysisManager = std::make_unique<FaceAnalysisManager>();
+        m_faceAnalysisManager.reset(new FaceAnalysisManager());
     }
     
     if (m_faceAnalysisManager->initialize(modelPath)) {
@@ -173,7 +167,7 @@ bool ExtendedInferenceManager::initializeStatistics() {
     LOGI("Initializing statistics");
     
     if (!m_statisticsManager) {
-        m_statisticsManager = std::make_unique<StatisticsManager>();
+        m_statisticsManager.reset(new StatisticsManager());
     }
     
     // 设置统计配置
@@ -444,11 +438,11 @@ InferenceResultGroup convertToInferenceResultGroup(const std::vector<Detection>&
         InferenceResult result;
         result.class_name = detection.className;
         result.confidence = detection.confidence;
-        result.x1 = detection.x1;
-        result.y1 = detection.y1;
-        result.x2 = detection.x2;
-        result.y2 = detection.y2;
-        
+        result.x1 = static_cast<float>(detection.box.x);
+        result.y1 = static_cast<float>(detection.box.y);
+        result.x2 = static_cast<float>(detection.box.x + detection.box.width);
+        result.y2 = static_cast<float>(detection.box.y + detection.box.height);
+
         group.results.push_back(result);
     }
     
@@ -463,11 +457,16 @@ std::vector<Detection> convertToDetections(const InferenceResultGroup& results) 
         Detection detection;
         detection.className = result.class_name;
         detection.confidence = result.confidence;
-        detection.x1 = result.x1;
-        detection.y1 = result.y1;
-        detection.x2 = result.x2;
-        detection.y2 = result.y2;
-        
+        detection.class_id = result.class_id;
+
+        // 转换坐标格式：从x1,y1,x2,y2到cv::Rect
+        detection.box = cv::Rect(
+            static_cast<int>(result.x1),
+            static_cast<int>(result.y1),
+            static_cast<int>(result.x2 - result.x1),
+            static_cast<int>(result.y2 - result.y1)
+        );
+
         detections.push_back(detection);
     }
     

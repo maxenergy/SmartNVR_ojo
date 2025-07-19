@@ -1,14 +1,8 @@
 #include "statistics_manager.h"
-#include <android/log.h>
+#include "log4c.h"
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
-
-#define TAG "StatisticsManager"
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 StatisticsManager::StatisticsManager() {
     m_config = StatisticsConfig();
