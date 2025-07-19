@@ -24,6 +24,10 @@ include_directories(${CMAKE_SOURCE_DIR}/engine)
 include_directories(${CMAKE_SOURCE_DIR}/draw)
 include_directories(${CMAKE_SOURCE_DIR}/rkmedia)
 include_directories(${CMAKE_SOURCE_DIR}/rkmedia/utils)
+# 🚀 新增: InspireFace集成模块包含目录
+include_directories(${CMAKE_SOURCE_DIR}/face)
+include_directories(${CMAKE_SOURCE_DIR}/statistics)
+include_directories(${CMAKE_SOURCE_DIR})
 
 set(OpenCV_DIR ${CMAKE_SOURCE_DIR}/opencv/jni)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/libs_export/${ANDROID_ABI})
@@ -65,6 +69,11 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         engine/inference_manager.cpp
         engine/yolov8_engine.cpp
         process/yolov8_postprocess.cpp
+
+        # 🚀 新增: InspireFace集成模块
+        engine/extended_inference_manager.cpp
+        face/face_analysis_manager.cpp
+        statistics/statistics_manager.cpp
         )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}

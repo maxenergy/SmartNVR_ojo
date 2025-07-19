@@ -1,5 +1,7 @@
 package com.wulala.myyolov5rtspthreadpool;
 
+import com.wulala.myyolov5rtspthreadpool.entities.Detection;
+
 /**
  * 扩展推理JNI接口
  * 提供目标检测 + 人脸分析 + 统计功能的统一接口
