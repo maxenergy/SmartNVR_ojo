@@ -13,10 +13,15 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.wulala.myyolov5rtspthreadpool.databinding.ActivityMainBinding;
 import com.wulala.myyolov5rtspthreadpool.ui.OnBackButtonPressedListener;
+import com.wulala.myyolov5rtspthreadpool.ui.SurveillanceFragment;
+import com.wulala.myyolov5rtspthreadpool.ui.MultiCameraView;
 import com.wulala.myyolov5rtspthreadpool.entities.Camera;
+import com.wulala.myyolov5rtspthreadpool.IntegratedAIManager;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -32,6 +37,12 @@ public class MainActivity extends AppCompatActivity {
     private long nativePlayerObj = 0;
     private List<Surface> cameraSurfaces;
     private int currentCameraCount = 0;
+
+    // AI分析相关
+    private IntegratedAIManager aiManager;
+    private Timer aiSimulationTimer;
+    private boolean aiAnalysisEnabled = false;
+    private SurveillanceFragment surveillanceFragment;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,18 +67,39 @@ public class MainActivity extends AppCompatActivity {
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
-        binding.fab.setOnClickListener(view -> {
-            android.util.Log.d("MainActivity", "FAB clicked - opening settings");
-            openSettings();
-        });
+        // AI分析切换按钮
+        if (binding.fabAiToggle != null) {
+            android.util.Log.d("MainActivity", "Setting up AI toggle FAB click listener");
+            binding.fabAiToggle.setOnClickListener(view -> {
+                android.util.Log.d("MainActivity", "=== AI TOGGLE FAB CLICKED ===");
+                android.util.Log.d("MainActivity", "Current AI analysis state: " + aiAnalysisEnabled);
+                try {
+                    toggleAIAnalysis();
+                    android.util.Log.d("MainActivity", "toggleAIAnalysis() completed successfully");
+                } catch (Exception e) {
+                    android.util.Log.e("MainActivity", "Error in toggleAIAnalysis()", e);
+                }
+            });
+        } else {
+            android.util.Log.e("MainActivity", "ERROR: fabAiToggle is null!");
+        }
 
-        // 长按FAB测试多实例创建
-        binding.fab.setOnLongClickListener(view -> {
-            android.util.Log.d("MainActivity", "FAB long clicked - testing multi-instance");
-            testMultiInstanceCreation();
-            return true;
-        });
-        
+        // 设置按钮
+        if (binding.fabSettings != null) {
+            android.util.Log.d("MainActivity", "Setting up settings FAB click listener");
+            binding.fabSettings.setOnClickListener(view -> {
+                android.util.Log.d("MainActivity", "=== SETTINGS FAB CLICKED ===");
+                openSettings();
+            });
+        } else {
+            android.util.Log.e("MainActivity", "ERROR: fabSettings is null!");
+        }
+
+        // 初始化AI按钮状态（默认禁用）
+        binding.fabAiToggle.setImageResource(R.drawable.ic_eye_off);
+        binding.fabAiToggle.setBackgroundTintList(
+            android.content.res.ColorStateList.valueOf(0xFF9E9E9E)); // 灰色
+
         // Initialize native components
         assetManager = getAssets();
         setNativeAssetManager(assetManager);
@@ -82,6 +114,9 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < 16; i++) { // 支持最多16路摄像头
             cameraSurfaces.add(null);
         }
+
+        // 初始化AI分析管理器
+        initializeAIManager();
     }
 
     @Override
@@ -522,6 +557,112 @@ public class MainActivity extends AppCompatActivity {
                     yolov8Available ? "✓" : "✗"));
         }
         android.util.Log.i(TAG, "=========================");
+    }
+
+    /**
+     * 初始化AI分析管理器
+     */
+    private void initializeAIManager() {
+        try {
+            aiManager = IntegratedAIManager.getInstance();
+            android.util.Log.d(TAG, "AI分析管理器初始化完成");
+        } catch (Exception e) {
+            android.util.Log.e(TAG, "AI分析管理器初始化失败", e);
+        }
+    }
+
+    /**
+     * 切换AI分析状态
+     */
+    private void toggleAIAnalysis() {
+        aiAnalysisEnabled = !aiAnalysisEnabled;
+
+        android.util.Log.d(TAG, "AI分析状态切换: " + (aiAnalysisEnabled ? "启用" : "禁用"));
+
+        // 获取SurveillanceFragment
+        surveillanceFragment = (SurveillanceFragment) getSupportFragmentManager()
+            .findFragmentById(binding.fragmentSurveillance.getId());
+
+        if (surveillanceFragment != null) {
+            MultiCameraView multiCameraView = surveillanceFragment.getMultiCameraView();
+            if (multiCameraView != null) {
+                // 启用/禁用所有摄像头的AI分析
+                multiCameraView.enableAllAIAnalysis(aiAnalysisEnabled);
+
+                if (aiAnalysisEnabled) {
+                    startAISimulation(multiCameraView);
+                    // 更新AI按钮图标为启用状态（眼睛开启）
+                    binding.fabAiToggle.setImageResource(R.drawable.ic_eye);
+                    binding.fabAiToggle.setBackgroundTintList(
+                        android.content.res.ColorStateList.valueOf(0xFF4CAF50)); // 绿色
+                    android.widget.Toast.makeText(this, "AI分析已启用", android.widget.Toast.LENGTH_SHORT).show();
+                } else {
+                    stopAISimulation();
+                    // 更新AI按钮图标为禁用状态（眼睛关闭）
+                    binding.fabAiToggle.setImageResource(R.drawable.ic_eye_off);
+                    binding.fabAiToggle.setBackgroundTintList(
+                        android.content.res.ColorStateList.valueOf(0xFF9E9E9E)); // 灰色
+                    android.widget.Toast.makeText(this, "AI分析已禁用", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            }
+        }
+
+        // 显示状态提示
+        String message = aiAnalysisEnabled ? "AI分析已启用" : "AI分析已禁用";
+        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * 启动AI模拟
+     */
+    private void startAISimulation(MultiCameraView multiCameraView) {
+        if (aiSimulationTimer != null) {
+            aiSimulationTimer.cancel();
+        }
+
+        aiSimulationTimer = new Timer();
+        aiSimulationTimer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                runOnUiThread(() -> {
+                    try {
+                        // 为每个摄像头模拟AI分析结果
+                        int cameraCount = multiCameraView.getCameraCount();
+                        for (int i = 0; i < cameraCount; i++) {
+                            if (multiCameraView.isAIAnalysisEnabled(i)) {
+                                multiCameraView.simulateAIResults(i);
+                            }
+                        }
+                    } catch (Exception e) {
+                        android.util.Log.e(TAG, "AI模拟更新失败", e);
+                    }
+                });
+            }
+        }, 1000, 2000); // 每2秒更新一次
+
+        android.util.Log.d(TAG, "AI模拟已启动");
+    }
+
+    /**
+     * 停止AI模拟
+     */
+    private void stopAISimulation() {
+        if (aiSimulationTimer != null) {
+            aiSimulationTimer.cancel();
+            aiSimulationTimer = null;
+        }
+        android.util.Log.d(TAG, "AI模拟已停止");
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+
+        // 清理AI相关资源
+        stopAISimulation();
+        if (aiManager != null) {
+            aiManager.cleanup();
+        }
     }
 
 }

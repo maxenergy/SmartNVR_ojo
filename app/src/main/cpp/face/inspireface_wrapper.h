@@ -4,6 +4,9 @@
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
+#include <memory>
+#include <android/asset_manager.h>
+#include "inspireface_model_manager.h"
 
 // InspireFace C API包装器
 // 为了简化集成，我们创建一个C++包装器来封装InspireFace的C API
@@ -17,14 +20,16 @@ class InspireFaceSession {
 public:
     InspireFaceSession();
     ~InspireFaceSession();
-    
+
     /**
      * 初始化InspireFace会话
-     * @param modelPath 模型文件路径
+     * @param assetManager Android资产管理器
+     * @param internalDataPath 应用内部数据路径
      * @param enableFaceAttribute 是否启用人脸属性分析
      * @return 是否成功
      */
-    bool initialize(const std::string& modelPath, bool enableFaceAttribute = true);
+    bool initialize(AAssetManager* assetManager, const std::string& internalDataPath,
+                   bool enableFaceAttribute = true);
     
     /**
      * 释放会话资源
@@ -45,6 +50,7 @@ private:
     void* m_session;        // HFSession句柄
     bool m_initialized;
     std::string m_modelPath;
+    std::unique_ptr<InspireFaceModelManager> m_modelManager;
 };
 
 /**
@@ -198,7 +204,7 @@ private:
     
     // 内部辅助方法
     bool convertMultipleFaceData(void* multipleFaceData, std::vector<FaceDetectionResult>& results);
-    bool convertAttributeResults(void* attributeData, std::vector<FaceAttributeResult>& results);
+    bool convertAttributeResult(void* attributeData, std::vector<FaceAttributeResult>& results);
 };
 
 /**

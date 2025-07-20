@@ -28,6 +28,8 @@ include_directories(${CMAKE_SOURCE_DIR}/rkmedia/utils)
 include_directories(${CMAKE_SOURCE_DIR}/face)
 include_directories(${CMAKE_SOURCE_DIR}/statistics)
 include_directories(${CMAKE_SOURCE_DIR})
+# 🚀 新增: InspireFace SDK头文件目录
+include_directories(${CMAKE_SOURCE_DIR}/../../../../3rdparty/inspireface/include)
 
 set(OpenCV_DIR ${CMAKE_SOURCE_DIR}/opencv/jni)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/libs_export/${ANDROID_ABI})
@@ -74,8 +76,12 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         engine/extended_inference_manager.cpp
         face/face_analysis_manager.cpp
         face/inspireface_wrapper.cpp
+        face/inspireface_model_manager.cpp
         statistics/statistics_manager.cpp
         jni/extended_inference_jni.cpp
+        jni/direct_inspireface_test_jni.cpp
+        jni/face_detection_test_jni.cpp
+        jni/real_yolo_inference_jni.cpp
         )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
@@ -86,5 +92,6 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
         ${RGA}/libs/${ANDROID_ABI}/librga.so
         ${RKNN}/libs/${ANDROID_ABI}/librknnrt.so
         ${ZLMEDIAKIT}/lib/libmk_api.so
+        ${CMAKE_SOURCE_DIR}/../../../../3rdparty/inspireface/lib/libInspireFace.so
 
         )

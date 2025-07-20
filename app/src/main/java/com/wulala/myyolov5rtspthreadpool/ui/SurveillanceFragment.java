@@ -198,4 +198,11 @@ public class SurveillanceFragment extends Fragment implements MultiCameraView.On
     public SurfaceView getCameraSurfaceView(int cameraIndex) {
         return multiCameraView.getSurfaceView(cameraIndex);
     }
+
+    /**
+     * 获取MultiCameraView实例
+     */
+    public MultiCameraView getMultiCameraView() {
+        return multiCameraView;
+    }
 }

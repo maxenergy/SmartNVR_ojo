@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <android/bitmap.h>
+#include <android/asset_manager_jni.h>
 #include <opencv2/opencv.hpp>
 #include "engine/extended_inference_manager.h"
 #include "log4c.h"
@@ -325,6 +326,49 @@ Java_com_wulala_myyolov5rtspthreadpool_ExtendedInferenceJNI_releaseExtendedInfer
     }
     
     LOGI("ExtendedInferenceManager released");
+}
+
+/**
+ * 初始化InspireFace模块
+ */
+JNIEXPORT jint JNICALL
+Java_com_wulala_myyolov5rtspthreadpool_ExtendedInferenceJNI_initializeInspireFace(
+    JNIEnv* env, jobject thiz, jobject asset_manager, jstring internal_data_path) {
+
+    LOGI("Initializing InspireFace module");
+
+    if (!g_extendedInferenceManager) {
+        LOGE("ExtendedInferenceManager not initialized");
+        return -1;
+    }
+
+    // 获取AssetManager
+    AAssetManager* assetManager = AAssetManager_fromJava(env, asset_manager);
+    if (!assetManager) {
+        LOGE("Failed to get AssetManager");
+        return -2;
+    }
+
+    // 获取内部数据路径
+    const char* dataPath = env->GetStringUTFChars(internal_data_path, nullptr);
+    if (!dataPath) {
+        LOGE("Failed to get internal data path");
+        return -3;
+    }
+
+    // 初始化InspireFace
+    bool success = g_extendedInferenceManager->initializeInspireFace(assetManager, std::string(dataPath));
+
+    // 释放字符串资源
+    env->ReleaseStringUTFChars(internal_data_path, dataPath);
+
+    if (success) {
+        LOGI("InspireFace module initialized successfully");
+        return 0;
+    } else {
+        LOGE("Failed to initialize InspireFace module");
+        return -4;
+    }
 }
 
 } // extern "C"

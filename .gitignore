@@ -36,4 +36,4 @@ app/src/main/jniLibs/
 *.csv
 crash_analysis_*
 crash_logcat_*
-memory_log*
+memory_log*3rdparty/inspireface-src/

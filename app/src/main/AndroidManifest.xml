@@ -25,8 +25,44 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".MainMenuActivity"
+            android:exported="true" />
+        <activity
             android:name=".ui.SettingsActivity"
             android:exported="false" />
+        <activity
+            android:name=".InspireFaceTestActivity"
+            android:exported="true"
+            android:label="InspireFace Test" />
+        <activity
+            android:name=".ModelFileTestActivity"
+            android:exported="true"
+            android:label="Model File Test" />
+        <activity
+            android:name=".DirectInspireFaceTestActivity"
+            android:exported="true"
+            android:label="Direct InspireFace Test" />
+        <activity
+            android:name=".FaceDetectionTestActivity"
+            android:exported="true"
+            android:label="Face Detection Test" />
+        <activity
+            android:name=".IntegratedAITestActivity"
+            android:exported="true"
+            android:label="Integrated AI Test" />
+        <activity
+            android:name=".CompletePipelineTestActivity"
+            android:exported="true"
+            android:label="Complete Pipeline Test" />
+        <activity
+            android:name=".RealYOLOTestActivity"
+            android:exported="true"
+            android:label="Real YOLO Test" />
+        <activity
+            android:name=".RealTimeVideoActivity"
+            android:exported="true"
+            android:label="Real Time Video AI"
+            android:screenOrientation="landscape" />
     </application>
 
 </manifest>

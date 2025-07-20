@@ -161,6 +161,26 @@ void ExtendedInferenceManager::releaseFaceAnalysis() {
     LOGI("Face analysis released");
 }
 
+bool ExtendedInferenceManager::initializeInspireFace(AAssetManager* assetManager,
+                                                    const std::string& internalDataPath) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    LOGI("Initializing InspireFace with internal path: %s", internalDataPath.c_str());
+
+    if (!m_faceAnalysisManager) {
+        m_faceAnalysisManager.reset(new FaceAnalysisManager());
+    }
+
+    if (m_faceAnalysisManager->initializeInspireFace(assetManager, internalDataPath)) {
+        m_faceAnalysisEnabled = true;
+        LOGI("InspireFace initialized successfully");
+        return true;
+    } else {
+        LOGE("Failed to initialize InspireFace");
+        return false;
+    }
+}
+
 bool ExtendedInferenceManager::initializeStatistics() {
     std::lock_guard<std::mutex> lock(m_mutex);
     

@@ -284,6 +284,15 @@ public class ExtendedInferenceJNI {
      * @return true成功，false失败
      */
     public static native boolean initializeFaceAnalysis(String inspireFaceModelPath);
+
+    /**
+     * 初始化InspireFace模块（使用AssetManager）
+     * @param assetManager Android AssetManager
+     * @param internalDataPath 应用内部数据路径
+     * @return 0成功，负数失败
+     */
+    public static native int initializeInspireFace(android.content.res.AssetManager assetManager,
+                                                  String internalDataPath);
     
     /**
      * 初始化统计功能

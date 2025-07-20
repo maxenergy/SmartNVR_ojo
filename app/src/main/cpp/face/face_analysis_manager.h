@@ -8,8 +8,10 @@
 #include <string>
 #include <chrono>
 #include <jni.h>
+#include <android/asset_manager.h>
 #include "types/model_config.h"
 #include "types/yolo_datatype.h"
+#include "inspireface_wrapper.h"
 
 // 前向声明
 struct Detection;
@@ -179,6 +181,7 @@ public:
     
     // 初始化和释放
     bool initialize(const std::string& modelPath);
+    bool initializeInspireFace(AAssetManager* assetManager, const std::string& internalDataPath);
     void release();
     
     // 核心功能

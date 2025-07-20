@@ -5,6 +5,7 @@
 #include "../face/face_analysis_manager.h"
 #include "../statistics/statistics_manager.h"
 #include <chrono>
+#include <android/asset_manager.h>
 
 // 级联检测配置
 struct CascadeDetectionConfig {
@@ -146,6 +147,7 @@ public:
     
     // 人脸分析管理
     bool initializeFaceAnalysis(const std::string& modelPath);
+    bool initializeInspireFace(AAssetManager* assetManager, const std::string& internalDataPath);
     void releaseFaceAnalysis();
     bool isFaceAnalysisEnabled() const { return m_faceAnalysisEnabled; }
     FaceAnalysisManager* getFaceAnalysisManager() { return m_faceAnalysisManager.get(); }
