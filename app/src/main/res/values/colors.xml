@@ -15,4 +15,8 @@
 
     <color name="fab_foreground">@color/purple_500</color>
     <color name="fab_background">@color/purple_200</color>
+
+    <!-- Detection settings colors -->
+    <color name="colorPrimary">#FF6200EE</color>
+    <color name="colorBackground">#FFF5F5F5</color>
 </resources>

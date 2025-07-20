@@ -24,8 +24,20 @@
             android:id="@+id/action_settingsToCameraUrl"
             app:destination="@id/CameraUrlFragment" />
         <action
+            android:id="@+id/action_settingsToDetectionSettings"
+            app:destination="@id/detectionSettingsFragment" />
+        <action
             android:id="@+id/action_SettingsToInfoFragment"
             app:destination="@id/infoFragment" />
+    </fragment>
+    <fragment
+        android:id="@+id/detectionSettingsFragment"
+        android:name="com.wulala.myyolov5rtspthreadpool.ui.DetectionSettingsFragment"
+        android:label="检测设置"
+        tools:layout="@layout/fragment_detection_settings" >
+        <action
+            android:id="@+id/action_detectionSettingsToSettings"
+            app:destination="@id/SettingsFragment" />
     </fragment>
     <fragment
         android:id="@+id/infoFragment"

@@ -15,6 +15,7 @@ import android.widget.GridLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import com.wulala.myyolov5rtspthreadpool.DetectionResultFilter;
 import com.wulala.myyolov5rtspthreadpool.IntegratedAIManager;
 import com.wulala.myyolov5rtspthreadpool.RealYOLOInference;
 import com.wulala.myyolov5rtspthreadpool.entities.FaceAttributes;
@@ -32,6 +33,7 @@ public class MultiCameraView extends GridLayout {
     private List<CameraViewHolder> cameraViews;
     private OnSurfaceChangeListener surfaceChangeListener;
     private int maxCameras = 16; // 最多支持4x4=16路摄像头
+    private DetectionResultFilter detectionFilter; // 检测结果过滤器
     
     public interface OnSurfaceChangeListener {
         void onSurfaceCreated(int cameraIndex, SurfaceHolder holder);
@@ -39,7 +41,7 @@ public class MultiCameraView extends GridLayout {
         void onSurfaceDestroyed(int cameraIndex, SurfaceHolder holder);
     }
     
-    private static class CameraViewHolder {
+    private class CameraViewHolder {
         SurfaceView surfaceView;
         TextView titleView;
         ImageView aiOverlayView;  // AI分析结果叠加层
@@ -105,10 +107,32 @@ public class MultiCameraView extends GridLayout {
         public void updateAIResults(IntegratedAIManager.AIDetectionResult result) {
             if (!aiAnalysisEnabled || result == null) return;
 
+            // 先应用检测过滤器，然后更新统计数据
+
+            // 应用检测过滤器
+            List<DetectionResultFilter.DetectionResult> allDetections = new ArrayList<>();
+            if (result.personDetections != null) {
+                for (RealYOLOInference.DetectionResult detection : result.personDetections) {
+                    allDetections.add(DetectionResultFilter.fromRealYOLOResult(detection));
+                }
+            }
+
+            // 过滤检测结果
+            List<DetectionResultFilter.DetectionResult> filteredDetections =
+                MultiCameraView.this.detectionFilter.filterResults(allDetections);
+
+            // 转换回RealYOLOInference.DetectionResult格式
+            lastDetections = new ArrayList<>();
+            for (DetectionResultFilter.DetectionResult filtered : filteredDetections) {
+                lastDetections.add(DetectionResultFilter.toRealYOLOResult(filtered));
+            }
+
+            // 更新人员计数为过滤后的结果
+            currentPersonCount = lastDetections.size();
+
             // 更新统计数据
-            currentPersonCount = result.detectedPersons;
-            if (result.detectedPersons > 0) {
-                totalPersonCount += result.detectedPersons;
+            if (currentPersonCount > 0) {
+                totalPersonCount += currentPersonCount;
                 // 只有检测到人员时才更新人脸数据
                 maleCount = result.maleCount;      // 使用当前值，不累积
                 femaleCount = result.femaleCount;  // 使用当前值，不累积
@@ -117,9 +141,6 @@ public class MultiCameraView extends GridLayout {
                 maleCount = 0;
                 femaleCount = 0;
             }
-
-            lastDetections = result.personDetections != null ?
-                new ArrayList<>(result.personDetections) : new ArrayList<>();
 
             lastFaceDetections = result.faceDetections != null ?
                 new ArrayList<>(result.faceDetections) : new ArrayList<>();
@@ -338,6 +359,7 @@ public class MultiCameraView extends GridLayout {
         cameraViews = new ArrayList<>();
         setColumnCount(1);
         setRowCount(1);
+        detectionFilter = new DetectionResultFilter(getContext());
     }
     
     public void setOnSurfaceChangeListener(OnSurfaceChangeListener listener) {

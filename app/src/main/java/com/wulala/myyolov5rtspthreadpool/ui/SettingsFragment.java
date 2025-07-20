@@ -62,6 +62,9 @@ public class SettingsFragment extends Fragment {
                 if (itemId == R.id.menuitem_add_camera) {
                     ((SettingsActivity)getActivity()).navigateToFragment(R.id.action_settingsToCameraUrl);
                     return true;
+                } else if (itemId == R.id.menuitem_detection_settings) {
+                    ((SettingsActivity)getActivity()).navigateToFragment(R.id.action_settingsToDetectionSettings);
+                    return true;
                 } else if (itemId == R.id.menuitem_allow_rotation) {
                     ((SettingsActivity)getActivity()).toggleRotationEnabledSetting();
                     SharedPreferencesManager.saveRotationEnabled(getContext(), ((SettingsActivity)getActivity()).getRotationEnabledSetting());
