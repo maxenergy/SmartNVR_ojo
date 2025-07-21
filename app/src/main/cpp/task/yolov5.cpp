@@ -24,7 +24,8 @@ void DetectionGrp2DetectionArray(yolov5::detect_result_group_t &det_grp, std::ve
                            det_grp.results[i].box.bottom - det_grp.results[i].box.top);
 
         det.confidence = det_grp.results[i].prop;
-        det.class_id = 0;
+        // 🔧 修复：使用实际的类别ID，而不是硬编码为0
+        det.class_id = det_grp.results[i].id;
         // generate random cv::Scalar color
         // det.color = cv::Scalar(rand() % 255, rand() % 255, rand() % 255);
         // green

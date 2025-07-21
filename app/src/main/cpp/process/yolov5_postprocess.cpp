@@ -23,6 +23,14 @@
 
 #include <set>
 #include <vector>
+
+// 🔧 添加Android日志支持
+#ifdef __ANDROID__
+#include <android/log.h>
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "BKAI", __VA_ARGS__)
+#else
+#define LOGD(...) printf(__VA_ARGS__)
+#endif
 namespace yolov5
 {
 
@@ -367,8 +375,19 @@ namespace yolov5
             group->results[last_count].box.right = (int)(clamp(x2, 0, model_in_w) / scale_w);
             group->results[last_count].box.bottom = (int)(clamp(y2, 0, model_in_h) / scale_h);
             group->results[last_count].prop = obj_conf;
+            group->results[last_count].id = id;  // 🔧 设置类别ID
             const char *label = labels[id];
             strncpy(group->results[last_count].name, label, OBJ_NAME_MAX_SIZE);
+
+            // 🔧 调试日志：检查类别映射
+            if (id >= 0 && id < 10) {  // 只记录前10个类别的映射
+                LOGD("🔍 类别映射调试: classId=%d -> label='%s' (期望: %s)",
+                     id, label,
+                     (id == 0) ? "person" :
+                     (id == 1) ? "bicycle" :
+                     (id == 2) ? "car" :
+                     (id == 9) ? "traffic light" : "other");
+            }
 
             // printf("result %2d: (%4d, %4d, %4d, %4d), %s\n", i, group->results[last_count].box.left,
             // group->results[last_count].box.top,

@@ -47,44 +47,64 @@ public class DetectionSettingsFragment extends Fragment {
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
-        return inflater.inflate(R.layout.fragment_detection_settings, container, false);
+        android.util.Log.d(TAG, "onCreateView 被调用");
+        View view = inflater.inflate(R.layout.fragment_detection_settings, container, false);
+        android.util.Log.d(TAG, "布局加载完成");
+        return view;
     }
     
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        
+
+        android.util.Log.d(TAG, "onViewCreated 被调用");
+
         // 初始化设置管理器
         settingsManager = new DetectionSettingsManager(getContext());
-        
+        android.util.Log.d(TAG, "设置管理器初始化完成");
+
         // 初始化视图
         initViews(view);
         setupListeners();
         loadSettings();
+
+        android.util.Log.d(TAG, "Fragment初始化完成");
     }
     
     private void initViews(View view) {
+        android.util.Log.d(TAG, "initViews 开始");
+
         switchDetectionEnabled = view.findViewById(R.id.switch_detection_enabled);
         seekBarConfidence = view.findViewById(R.id.seekbar_confidence);
         textConfidenceValue = view.findViewById(R.id.text_confidence_value);
         recyclerViewClasses = view.findViewById(R.id.recyclerview_classes);
+
+        android.util.Log.d(TAG, "RecyclerView找到: " + (recyclerViewClasses != null));
         btnBack = view.findViewById(R.id.btn_back);
         btnReset = view.findViewById(R.id.btn_reset);
         textStatusInfo = view.findViewById(R.id.text_status_info);
         
         // 设置RecyclerView
+        android.util.Log.d(TAG, "设置RecyclerView布局管理器");
         recyclerViewClasses.setLayoutManager(new LinearLayoutManager(getContext()));
-        
+
         // 创建适配器
+        android.util.Log.d(TAG, "创建类别项目列表");
         List<DetectionClassItem> classItems = createClassItems();
+        android.util.Log.d(TAG, "类别项目数量: " + classItems.size());
+
         adapter = new DetectionClassAdapter(classItems, new DetectionClassAdapter.OnClassToggleListener() {
             @Override
             public void onClassToggled(String className, boolean enabled) {
+                android.util.Log.d(TAG, "类别切换回调: " + className + " -> " + enabled);
                 settingsManager.setClassEnabled(className, enabled);
                 updateStatusInfo(); // 更新状态信息
             }
         });
+
+        android.util.Log.d(TAG, "设置适配器到RecyclerView");
         recyclerViewClasses.setAdapter(adapter);
+        android.util.Log.d(TAG, "RecyclerView设置完成");
     }
     
     private void setupListeners() {

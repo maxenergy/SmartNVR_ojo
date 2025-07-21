@@ -43,10 +43,15 @@ bool FaceAnalysisManager::initialize(const std::string& modelPath) {
     // 重置性能统计
     m_performanceStats = PerformanceStats();
     
-    // 初始化InspireFace (使用传统模式，暂时标记为成功)
-    // TODO: 实际实现需要JNI调用或使用新的initializeInspireFace(AssetManager, path)方法
-    m_inspireFaceInitialized = true;
-    LOGW("Using legacy initialization mode - InspireFace marked as initialized");
+    // 🔧 修复: 使用真实的InspireFace初始化流程
+    if (!initializeInspireFace(modelPath)) {
+        LOGE("Failed to initialize InspireFace with model path: %s", modelPath.c_str());
+        m_initialized = false;
+        m_inspireFaceInitialized = false;
+        return false;
+    }
+    
+    LOGI("✅ InspireFace initialized successfully with real implementation");
     
     m_initialized = true;
     LOGI("FaceAnalysisManager initialized successfully");
@@ -248,13 +253,19 @@ bool FaceAnalysisManager::initializeInspireFace(const std::string& modelPath) {
         return false;
     }
 
-    // 初始化会话 (暂时禁用，因为API已更改)
-    // TODO: 需要传递AssetManager和内部路径
-    // if (!m_inspireFaceSession->initialize(assetManager, internalDataPath, true)) {
-    //     LOGE("Failed to initialize InspireFace session");
-    //     return false;
-    // }
-    LOGW("Private initializeInspireFace method needs to be updated for new API");
+    // 🔧 修复: 创建并初始化InspireFace会话
+    m_inspireFaceSession.reset(new InspireFaceSession());
+    
+    // 🔧 修复: 使用标准初始化方法（传入nullptr作为AssetManager，使用modelPath作为内部路径）
+    if (!m_inspireFaceSession->initialize(nullptr, modelPath, true)) {
+        LOGE("Failed to initialize InspireFace session with path: %s", modelPath.c_str());
+        return false;
+    }
+    
+    // 创建图像处理器
+    m_imageProcessor.reset(new InspireFaceImageProcessor());
+    
+    LOGI("✅ InspireFace session and components created successfully");
 
     // 初始化检测器
     if (!m_faceDetector->initialize(m_inspireFaceSession.get())) {
@@ -534,3 +545,101 @@ cv::Mat drawFaceAnalysisResults(const cv::Mat& image,
 }
 
 } // namespace FaceAnalysisUtils
+
+// 简化的人脸分析接口实现 (用于JNI调用)
+bool FaceAnalysisManager::analyzeFaces(const cv::Mat& image, 
+                                      const std::vector<PersonDetection>& personDetections,
+                                      SimpleFaceAnalysisResult& result) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    if (!m_initialized) {
+        result.success = false;
+        result.errorMessage = "FaceAnalysisManager not initialized";
+        return false;
+    }
+    
+    LOGI("开始分析 %zu 个人员区域的人脸", personDetections.size());
+    
+    // 重置结果
+    result.success = false;
+    result.faceCount = 0;
+    result.maleCount = 0;
+    result.femaleCount = 0;
+    memset(result.ageGroups, 0, sizeof(result.ageGroups));
+    result.faces.clear();
+    
+    if (personDetections.empty()) {
+        LOGW("没有人员检测结果，跳过人脸分析");
+        result.success = true;
+        return true;
+    }
+    
+    try {
+        // 转换PersonDetection到InferenceResult格式
+        std::vector<InferenceResult> inferenceResults;
+        for (const auto& person : personDetections) {
+            InferenceResult inference;
+            inference.x1 = person.x1;
+            inference.y1 = person.y1;
+            inference.x2 = person.x2;
+            inference.y2 = person.y2;
+            inference.confidence = person.confidence;
+            inference.class_name = "person";
+            inferenceResults.push_back(inference);
+        }
+        
+        // 使用现有的analyzePersonRegions方法
+        std::vector<FaceAnalysisResult> analysisResults;
+        bool success = analyzePersonRegions(image, inferenceResults, analysisResults);
+        
+        if (!success) {
+            result.errorMessage = "人脸分析失败";
+            return false;
+        }
+        
+        // 汇总结果
+        for (const auto& analysisResult : analysisResults) {
+            for (const auto& faceInfo : analysisResult.faces) {
+                if (faceInfo.attributes.isValid()) {
+                    result.faceCount++;
+                    
+                    // 统计性别
+                    if (faceInfo.attributes.gender == 1) {
+                        result.maleCount++;
+                    } else if (faceInfo.attributes.gender == 0) {
+                        result.femaleCount++;
+                    }
+                    
+                    // 统计年龄组
+                    if (faceInfo.attributes.ageBracket >= 0 && faceInfo.attributes.ageBracket < 9) {
+                        result.ageGroups[faceInfo.attributes.ageBracket]++;
+                    }
+                    
+                    // 添加人脸信息
+                    SimpleFaceAnalysisResult::Face face;
+                    face.x1 = static_cast<float>(faceInfo.faceRect.x);
+                    face.y1 = static_cast<float>(faceInfo.faceRect.y);
+                    face.x2 = static_cast<float>(faceInfo.faceRect.x + faceInfo.faceRect.width);
+                    face.y2 = static_cast<float>(faceInfo.faceRect.y + faceInfo.faceRect.height);
+                    face.confidence = faceInfo.confidence;
+                    face.gender = faceInfo.attributes.gender;
+                    face.age = faceInfo.attributes.ageBracket;
+                    
+                    result.faces.push_back(face);
+                }
+            }
+        }
+        
+        result.success = true;
+        LOGI("✅ 人脸分析完成: %d 个人脸, %d 男性, %d 女性", 
+             result.faceCount, result.maleCount, result.femaleCount);
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errorMessage = std::string("人脸分析异常: ") + e.what();
+        LOGE("人脸分析异常: %s", e.what());
+        return false;
+    }
+}

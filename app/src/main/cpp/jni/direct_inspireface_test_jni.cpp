@@ -4,6 +4,8 @@
 #include <vector>
 #include <memory>
 #include "../face/inspireface_wrapper.h"
+#include "../face/face_analysis_manager.h"
+#include "../statistics/statistics_manager.h"
 #include "log4c.h"
 
 // 引入InspireFace C API
@@ -29,6 +31,9 @@ struct FaceAnalysisNativeResult {
 };
 
 static FaceAnalysisNativeResult g_lastFaceAnalysisResult;
+
+// 🔧 全局StatisticsManager实例
+static std::unique_ptr<StatisticsManager> g_statisticsManager;
 
 extern "C" {
 
@@ -368,49 +373,112 @@ Java_com_wulala_myyolov5rtspthreadpool_DirectInspireFaceTest_performFaceAnalysis
         env->ReleaseByteArrayElements(image_data, imageBytes, 0);
         env->ReleaseFloatArrayElements(person_detections, personDetectionsData, 0);
 
-        // 暂时返回模拟结果，直到我们完成完整的InspireFace集成
-        // TODO: 实现真实的InspireFace人脸检测
-        LOGW("Using simulated face detection results - TODO: implement real InspireFace detection");
+        // 使用真实的InspireFace进行人脸分析
+        LOGI("开始真实的InspireFace人脸分析，人员数量: %d", personCount);
 
-        g_lastFaceAnalysisResult.success = true;
-        g_lastFaceAnalysisResult.faceCount = personCount; // 假设每个人都有一张脸
-        g_lastFaceAnalysisResult.maleCount = personCount / 2;
-        g_lastFaceAnalysisResult.femaleCount = personCount - g_lastFaceAnalysisResult.maleCount;
-
-        // 生成模拟的人脸检测框（基于人员检测框）
-        for (int i = 0; i < personCount; i++) {
-            int baseIndex = 1 + i * 5;
-            float personX1 = personDetectionsData[baseIndex];
-            float personY1 = personDetectionsData[baseIndex + 1];
-            float personX2 = personDetectionsData[baseIndex + 2];
-            float personY2 = personDetectionsData[baseIndex + 3];
-            float confidence = personDetectionsData[baseIndex + 4];
-
-            // 在人员框内生成人脸框
-            float faceWidth = (personX2 - personX1) * 0.6f;
-            float faceHeight = (personY2 - personY1) * 0.4f;
-            float faceX1 = personX1 + (personX2 - personX1 - faceWidth) / 2;
-            float faceY1 = personY1 + (personY2 - personY1) * 0.1f;
-            float faceX2 = faceX1 + faceWidth;
-            float faceY2 = faceY1 + faceHeight;
-
-            g_lastFaceAnalysisResult.faceBoxes.push_back(faceX1);
-            g_lastFaceAnalysisResult.faceBoxes.push_back(faceY1);
-            g_lastFaceAnalysisResult.faceBoxes.push_back(faceX2);
-            g_lastFaceAnalysisResult.faceBoxes.push_back(faceY2);
-
-            g_lastFaceAnalysisResult.faceConfidences.push_back(confidence * 0.9f); // 稍微降低置信度
-            g_lastFaceAnalysisResult.genders.push_back(i % 2); // 交替性别
-            g_lastFaceAnalysisResult.ages.push_back(25 + (i * 5) % 30); // 25-55岁范围
-
-            // 更新年龄组统计
-            int ageGroup = (25 + (i * 5) % 30) / 10 - 2; // 转换为0-8的年龄组索引
-            if (ageGroup >= 0 && ageGroup < 9) {
-                g_lastFaceAnalysisResult.ageGroups[ageGroup]++;
-            }
+        // 创建FaceAnalysisManager实例进行真实分析
+        FaceAnalysisManager faceManager;
+        
+        // 初始化人脸分析管理器
+        std::string modelPath = "/data/data/com.wulala.myyolov5rtspthreadpool/files/inspireface_models";
+        if (!faceManager.initialize(modelPath)) {
+            LOGE("Failed to initialize FaceAnalysisManager");
+            g_lastFaceAnalysisResult.success = false;
+            g_lastFaceAnalysisResult.errorMessage = "FaceAnalysisManager initialization failed";
+            return -8;
         }
 
-        LOGI("✅ Face analysis completed: %d faces detected", g_lastFaceAnalysisResult.faceCount);
+        // 将图像数据转换为cv::Mat
+        cv::Mat image;
+        try {
+            // 假设输入是JPEG格式的字节数组
+            std::vector<uchar> imageBuffer(imageBytes, imageBytes + env->GetArrayLength(image_data));
+            image = cv::imdecode(imageBuffer, cv::IMREAD_COLOR);
+            
+            if (image.empty()) {
+                LOGE("Failed to decode image data");
+                g_lastFaceAnalysisResult.success = false;
+                g_lastFaceAnalysisResult.errorMessage = "Image decode failed";
+                return -9;
+            }
+            
+            LOGI("Image decoded successfully: %dx%d", image.cols, image.rows);
+        } catch (const std::exception& e) {
+            LOGE("Exception during image decoding: %s", e.what());
+            g_lastFaceAnalysisResult.success = false;
+            g_lastFaceAnalysisResult.errorMessage = "Image decode exception";
+            return -10;
+        }
+
+        // 准备人员检测结果
+        std::vector<FaceAnalysisManager::PersonDetection> personDetections;
+        for (int i = 0; i < personCount; i++) {
+            int baseIndex = 1 + i * 5;
+            FaceAnalysisManager::PersonDetection detection;
+            detection.x1 = personDetectionsData[baseIndex];
+            detection.y1 = personDetectionsData[baseIndex + 1];
+            detection.x2 = personDetectionsData[baseIndex + 2];
+            detection.y2 = personDetectionsData[baseIndex + 3];
+            detection.confidence = personDetectionsData[baseIndex + 4];
+            personDetections.push_back(detection);
+        }
+
+        // 执行真实的人脸分析
+        FaceAnalysisManager::SimpleFaceAnalysisResult analysisResult;
+        bool success = faceManager.analyzeFaces(image, personDetections, analysisResult);
+
+        if (success) {
+            // 🔧 简化版StatisticsManager更新
+            if (!g_statisticsManager) {
+                g_statisticsManager.reset(new StatisticsManager());
+                LOGD("📊 StatisticsManager已初始化");
+            }
+            
+            // 简化版数据更新：直接使用人脸分析结果更新统计
+            // TODO: 后续完善为完整的FaceAnalysisResult转换
+            g_statisticsManager->incrementAnalysisCount();
+            
+            LOGD("📊 StatisticsManager已更新分析计数");
+            
+            // 将真实分析结果转换为全局结果结构
+            g_lastFaceAnalysisResult.success = true;
+            g_lastFaceAnalysisResult.faceCount = analysisResult.faceCount;
+            g_lastFaceAnalysisResult.maleCount = analysisResult.maleCount;
+            g_lastFaceAnalysisResult.femaleCount = analysisResult.femaleCount;
+            
+            // 复制年龄组数据
+            for (int i = 0; i < 9; i++) {
+                g_lastFaceAnalysisResult.ageGroups[i] = analysisResult.ageGroups[i];
+            }
+            
+            // 复制人脸检测框数据
+            g_lastFaceAnalysisResult.faceBoxes.clear();
+            g_lastFaceAnalysisResult.faceConfidences.clear();
+            g_lastFaceAnalysisResult.genders.clear();
+            g_lastFaceAnalysisResult.ages.clear();
+            
+            for (const auto& face : analysisResult.faces) {
+                g_lastFaceAnalysisResult.faceBoxes.push_back(face.x1);
+                g_lastFaceAnalysisResult.faceBoxes.push_back(face.y1);
+                g_lastFaceAnalysisResult.faceBoxes.push_back(face.x2);
+                g_lastFaceAnalysisResult.faceBoxes.push_back(face.y2);
+                
+                g_lastFaceAnalysisResult.faceConfidences.push_back(face.confidence);
+                g_lastFaceAnalysisResult.genders.push_back(face.gender);
+                g_lastFaceAnalysisResult.ages.push_back(face.age);
+            }
+            
+            LOGI("✅ 真实人脸分析完成: %d 个人脸, %d 男性, %d 女性", 
+                 g_lastFaceAnalysisResult.faceCount,
+                 g_lastFaceAnalysisResult.maleCount,
+                 g_lastFaceAnalysisResult.femaleCount);
+        } else {
+            LOGE("真实人脸分析失败: %s", analysisResult.errorMessage.c_str());
+            g_lastFaceAnalysisResult.success = false;
+            g_lastFaceAnalysisResult.errorMessage = analysisResult.errorMessage;
+            return -11;
+        }
+
         return 0;
 
     } catch (const std::exception& e) {
@@ -528,6 +596,190 @@ Java_com_wulala_myyolov5rtspthreadpool_DirectInspireFaceTest_getFaceAnalysisResu
         LOGE("Unknown exception creating face analysis result");
         return nullptr;
     }
+}
+
+/**
+ * 🔧 新增：获取C++层统计数据的JNI方法
+ * 用于统一人员统计架构，减少Java-C++数据传递开销
+ */
+
+// 批量统计结果结构体
+struct BatchStatisticsResult {
+    int personCount = 0;
+    int maleCount = 0;
+    int femaleCount = 0;
+    int totalFaceCount = 0;
+    int ageBrackets[9] = {0};
+    bool success = false;
+    std::string errorMessage;
+    
+    // 性能指标
+    double averageProcessingTime = 0.0;
+    int totalAnalysisCount = 0;
+    double successRate = 0.0;
+};
+
+// 全局统计结果缓存
+static BatchStatisticsResult g_lastStatisticsResult;
+
+// 🔧 JNI性能监控
+struct JNIPerformanceMonitor {
+    int totalCalls = 0;
+    std::chrono::steady_clock::time_point lastCallTime;
+    std::chrono::milliseconds totalCallTime{0};
+    
+    void recordCall(std::chrono::milliseconds callTime) {
+        totalCalls++;
+        totalCallTime += callTime;
+        lastCallTime = std::chrono::steady_clock::now();
+    }
+    
+    double getAverageCallTime() const {
+        if (totalCalls == 0) return 0.0;
+        return static_cast<double>(totalCallTime.count()) / totalCalls;
+    }
+    
+    void logStats() const {
+        LOGD("📊 JNI性能统计: 总调用=%d次, 平均耗时=%.2fms", 
+             totalCalls, getAverageCallTime());
+    }
+};
+
+static JNIPerformanceMonitor g_jniMonitor;
+
+/**
+ * 获取当前统计数据（从C++层StatisticsManager）
+ */
+JNIEXPORT jobject JNICALL
+Java_com_wulala_myyolov5rtspthreadpool_DirectInspireFaceTest_getCurrentStatistics(
+    JNIEnv* env, jobject thiz) {
+    
+    auto startTime = std::chrono::steady_clock::now();
+    LOGD("🔧 获取C++层统计数据 (调用次数: %d)", g_jniMonitor.totalCalls + 1);
+    
+    try {
+        // 🔧 简化版StatisticsManager集成
+        if (!g_statisticsManager) {
+            g_statisticsManager.reset(new StatisticsManager());
+            LOGD("📊 StatisticsManager已初始化");
+        }
+        
+        // 获取当前统计数据
+        StatisticsData currentStats = g_statisticsManager->getCurrentStatistics();
+        
+        // 如果StatisticsManager有数据，使用它；否则使用人脸分析结果
+        if (currentStats.totalPersonCount > 0) {
+            g_lastStatisticsResult.success = true;
+            g_lastStatisticsResult.personCount = currentStats.totalPersonCount;
+            g_lastStatisticsResult.maleCount = currentStats.maleCount;
+            g_lastStatisticsResult.femaleCount = currentStats.femaleCount;
+            g_lastStatisticsResult.totalFaceCount = currentStats.totalFaceCount;
+            
+            // 复制年龄分布数据
+            for (int i = 0; i < 9; i++) {
+                g_lastStatisticsResult.ageBrackets[i] = currentStats.ageBracketCounts[i];
+            }
+            
+            LOGD("📊 使用StatisticsManager数据: 人员=%d(跟踪), 人脸=%d(当前帧)", 
+                 currentStats.totalPersonCount, currentStats.totalFaceCount);
+        } else {
+            // 回退到使用人脸分析结果
+            g_lastStatisticsResult.success = g_lastFaceAnalysisResult.success;
+            g_lastStatisticsResult.personCount = g_lastFaceAnalysisResult.faceCount;
+            g_lastStatisticsResult.maleCount = g_lastFaceAnalysisResult.maleCount;
+            g_lastStatisticsResult.femaleCount = g_lastFaceAnalysisResult.femaleCount;
+            g_lastStatisticsResult.totalFaceCount = g_lastFaceAnalysisResult.faceCount;
+            
+            // 复制年龄分布数据
+            for (int i = 0; i < 9; i++) {
+                g_lastStatisticsResult.ageBrackets[i] = g_lastFaceAnalysisResult.ageGroups[i];
+            }
+            
+            LOGD("📊 回退使用人脸分析结果: 人脸=%d", g_lastFaceAnalysisResult.faceCount);
+        }
+        
+        // 创建Java对象返回统计结果
+        jclass resultClass = env->FindClass("com/wulala/myyolov5rtspthreadpool/BatchStatisticsResult");
+        if (!resultClass) {
+            LOGE("Failed to find BatchStatisticsResult class");
+            return nullptr;
+        }
+        
+        jmethodID constructor = env->GetMethodID(resultClass, "<init>", "()V");
+        if (!constructor) {
+            LOGE("Failed to find BatchStatisticsResult constructor");
+            return nullptr;
+        }
+        
+        jobject result = env->NewObject(resultClass, constructor);
+        if (!result) {
+            LOGE("Failed to create BatchStatisticsResult object");
+            return nullptr;
+        }
+        
+        // 设置字段值
+        jfieldID successField = env->GetFieldID(resultClass, "success", "Z");
+        jfieldID personCountField = env->GetFieldID(resultClass, "personCount", "I");
+        jfieldID maleCountField = env->GetFieldID(resultClass, "maleCount", "I");
+        jfieldID femaleCountField = env->GetFieldID(resultClass, "femaleCount", "I");
+        jfieldID totalFaceCountField = env->GetFieldID(resultClass, "totalFaceCount", "I");
+        jfieldID ageBracketsField = env->GetFieldID(resultClass, "ageBrackets", "[I");
+        
+        if (successField && personCountField && maleCountField && femaleCountField && 
+            totalFaceCountField && ageBracketsField) {
+            
+            env->SetBooleanField(result, successField, g_lastStatisticsResult.success);
+            env->SetIntField(result, personCountField, g_lastStatisticsResult.personCount);
+            env->SetIntField(result, maleCountField, g_lastStatisticsResult.maleCount);
+            env->SetIntField(result, femaleCountField, g_lastStatisticsResult.femaleCount);
+            env->SetIntField(result, totalFaceCountField, g_lastStatisticsResult.totalFaceCount);
+            
+            // 设置年龄分布数组
+            jintArray ageArray = env->NewIntArray(9);
+            env->SetIntArrayRegion(ageArray, 0, 9, g_lastStatisticsResult.ageBrackets);
+            env->SetObjectField(result, ageBracketsField, ageArray);
+            
+            LOGD("✅ 统计数据获取成功: 人员=%d, 男性=%d, 女性=%d, 人脸=%d", 
+                 g_lastStatisticsResult.personCount,
+                 g_lastStatisticsResult.maleCount,
+                 g_lastStatisticsResult.femaleCount,
+                 g_lastStatisticsResult.totalFaceCount);
+        }
+        
+        // 🔧 记录JNI调用性能
+        auto endTime = std::chrono::steady_clock::now();
+        auto callTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+        g_jniMonitor.recordCall(callTime);
+        
+        // 每10次调用输出一次性能统计
+        if (g_jniMonitor.totalCalls % 10 == 0) {
+            g_jniMonitor.logStats();
+        }
+        
+        return result;
+        
+    } catch (const std::exception& e) {
+        LOGE("Exception getting statistics: %s", e.what());
+        return nullptr;
+    } catch (...) {
+        LOGE("Unknown exception getting statistics");
+        return nullptr;
+    }
+}
+
+/**
+ * 重置统计数据
+ */
+JNIEXPORT void JNICALL
+Java_com_wulala_myyolov5rtspthreadpool_DirectInspireFaceTest_resetStatistics(
+    JNIEnv* env, jobject thiz) {
+    
+    LOGD("🔧 重置C++层统计数据");
+    
+    g_lastStatisticsResult = BatchStatisticsResult();
+    g_lastFaceAnalysisResult = FaceAnalysisNativeResult();
+    
+    LOGD("✅ 统计数据已重置");
 }
 
 } // extern "C"

@@ -118,12 +118,18 @@ public:
     void resetStuckState(); // 重置卡住状态
     bool attemptRestart();  // 尝试重启RTSP流
     void updateFrameStatus(bool success); // 更新帧状态
+    
+    // 🔧 新增: 类别过滤相关方法
+    std::set<std::string> getEnabledClassesFromJava(); // 从Java层获取启用的类别
 
     // void setRenderCallback(RenderCallback renderCallback_);
 
     void display();
 
     void get_detect_result();
+
+    // 🔧 新增：获取当前检测结果
+    bool getCurrentDetectionResults(std::vector<Detection>& results);
 
     // 渲染到专用窗口（用于多摄像头）
     void renderFrameToWindow(uint8_t *src_data, int width, int height, int src_line_size, ANativeWindow *targetWindow);

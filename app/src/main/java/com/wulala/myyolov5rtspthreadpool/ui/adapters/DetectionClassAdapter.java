@@ -39,22 +39,31 @@ public class DetectionClassAdapter extends RecyclerView.Adapter<DetectionClassAd
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        android.util.Log.d("DetectionClassAdapter", "创建ViewHolder");
         View view = LayoutInflater.from(parent.getContext())
                 .inflate(R.layout.item_detection_class, parent, false);
-        return new ViewHolder(view);
+        ViewHolder holder = new ViewHolder(view);
+        android.util.Log.d("DetectionClassAdapter", "ViewHolder创建完成, Switch控件: " +
+                          (holder.switchEnabled != null ? "找到" : "未找到"));
+        return holder;
     }
     
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         DetectionSettingsFragment.DetectionClassItem item = classItems.get(position);
-        
+
+        android.util.Log.d("DetectionClassAdapter", "绑定视图: position=" + position +
+                          ", className=" + item.className + ", enabled=" + item.enabled);
+
         // 设置显示名称
         holder.textClassName.setText(item.displayName);
         holder.textClassNameEn.setText(item.className);
-        
+
         // 设置开关状态（临时移除监听器避免递归调用）
         holder.switchEnabled.setOnCheckedChangeListener(null);
         holder.switchEnabled.setChecked(item.enabled);
+
+        android.util.Log.d("DetectionClassAdapter", "Switch状态设置完成: " + item.className + " -> " + item.enabled);
         
         // 设置优先级样式
         if (item.isPriority) {
@@ -70,12 +79,17 @@ public class DetectionClassAdapter extends RecyclerView.Adapter<DetectionClassAd
         }
         
         // 重新设置监听器
+        android.util.Log.d("DetectionClassAdapter", "设置监听器: " + item.className);
         holder.switchEnabled.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                android.util.Log.d("DetectionClassAdapter", "类别切换触发: " + item.className + " -> " + isChecked);
                 item.enabled = isChecked;
                 if (listener != null) {
+                    android.util.Log.d("DetectionClassAdapter", "调用监听器回调: " + item.className);
                     listener.onClassToggled(item.className, isChecked);
+                } else {
+                    android.util.Log.w("DetectionClassAdapter", "监听器为null!");
                 }
 
                 // 显示简短的保存提示
@@ -85,10 +99,34 @@ public class DetectionClassAdapter extends RecyclerView.Adapter<DetectionClassAd
         });
         
         // 设置点击事件
+        android.util.Log.d("DetectionClassAdapter", "设置点击事件: " + item.className);
         holder.itemView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                android.util.Log.d("DetectionClassAdapter", "项目点击: " + item.className);
                 holder.switchEnabled.toggle();
+            }
+        });
+
+        // 添加触摸事件调试
+        holder.itemView.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                    android.util.Log.d("DetectionClassAdapter", "触摸事件: " + item.className + " at (" + event.getX() + ", " + event.getY() + ")");
+                }
+                return false; // 不消费事件，让点击事件继续传递
+            }
+        });
+
+        // 直接在Switch上添加触摸监听器
+        holder.switchEnabled.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                    android.util.Log.d("DetectionClassAdapter", "Switch触摸事件: " + item.className);
+                }
+                return false;
             }
         });
     }

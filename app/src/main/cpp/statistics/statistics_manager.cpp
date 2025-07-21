@@ -10,6 +10,10 @@ StatisticsManager::StatisticsManager() {
     m_lastResetTime = std::chrono::steady_clock::now();
     m_lastSnapshotTime = m_lastResetTime;
     
+    // 🔧 初始化时间窗口配置
+    m_timeWindowConfig = TimeWindowConfig();
+    m_trackedPersons.reserve(m_timeWindowConfig.maxTrackedPersons);
+    
     LOGI("StatisticsManager created");
 }
 
@@ -200,9 +204,14 @@ double StatisticsManager::getStatisticsDuration() const {
 // ==================== 私有方法实现 ====================
 
 void StatisticsManager::updateCurrentStatistics(const std::vector<FaceAnalysisResult>& results) {
-    // 更新基础计数
-    m_currentStats.totalPersonCount = static_cast<int>(results.size());
+    // 🔧 优化：首先更新人员跟踪
+    updatePersonTracking(results);
     
+    // 🔧 基于跟踪结果更新统计（避免重复计数）
+    auto activePersons = getActivePersons();
+    m_currentStats.totalPersonCount = static_cast<int>(activePersons.size());
+    
+    // 🔧 基于跟踪的人员进行统计（避免重复计数）
     int totalFaces = 0;
     int validFaces = 0;
     int males = 0, females = 0, unknownGender = 0;
@@ -211,35 +220,35 @@ void StatisticsManager::updateCurrentStatistics(const std::vector<FaceAnalysisRe
     m_currentStats.ageBracketCounts.fill(0);
     m_currentStats.raceCounts.fill(0);
     
-    // 遍历所有人脸分析结果
-    for (const auto& result : results) {
-        for (const auto& face : result.faces) {
-            totalFaces++;
+    // 统计活跃人员的属性
+    for (const auto& person : activePersons) {
+        if (person.confidence > 0.0f) { // 有有效的人脸属性
+            validFaces++;
             
-            // 检查人脸是否符合统计条件
-            if (isValidFaceForStats(face)) {
-                validFaces++;
-                
-                // 统计性别
-                if (face.attributes.gender == 1) {
-                    males++;
-                } else if (face.attributes.gender == 0) {
-                    females++;
-                } else {
-                    unknownGender++;
-                }
-                
-                // 统计年龄段
-                if (face.attributes.ageBracket >= 0 && face.attributes.ageBracket < 9) {
-                    m_currentStats.ageBracketCounts[face.attributes.ageBracket]++;
-                }
-                
-                // 统计种族
-                if (face.attributes.race >= 0 && face.attributes.race < 5) {
-                    m_currentStats.raceCounts[face.attributes.race]++;
-                }
+            // 统计性别
+            if (person.gender == 1) {
+                males++;
+            } else if (person.gender == 0) {
+                females++;
+            } else {
+                unknownGender++;
+            }
+            
+            // 统计年龄段
+            if (person.ageBracket >= 0 && person.ageBracket < 9) {
+                m_currentStats.ageBracketCounts[person.ageBracket]++;
+            }
+            
+            // 统计种族
+            if (person.race >= 0 && person.race < 5) {
+                m_currentStats.raceCounts[person.race]++;
             }
         }
+    }
+    
+    // 计算当前帧的总人脸数（用于参考）
+    for (const auto& result : results) {
+        totalFaces += static_cast<int>(result.faces.size());
     }
     
     // 更新统计数据
@@ -482,3 +491,163 @@ std::string generateDetailedReport(const StatisticsData& current,
 }
 
 } // namespace StatisticsUtils
+
+// ==================== 🔧 人员跟踪算法实现 ====================
+
+void StatisticsManager::setTimeWindowConfig(const TimeWindowConfig& config) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    if (!config.isValid()) {
+        LOGE("Invalid TimeWindowConfig provided");
+        return;
+    }
+    
+    m_timeWindowConfig = config;
+    
+    // 调整跟踪容器大小
+    m_trackedPersons.reserve(config.maxTrackedPersons);
+    
+    LOGI("TimeWindowConfig updated: tracking_window=%llds, stats_window=%llds, overlap_threshold=%.2f",
+         config.personTrackingWindow.count(), config.statisticsWindow.count(), config.overlapThreshold);
+}
+
+TimeWindowConfig StatisticsManager::getTimeWindowConfig() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_timeWindowConfig;
+}
+
+void StatisticsManager::updatePersonTracking(const std::vector<FaceAnalysisResult>& results) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    LOGD("🔧 开始人员跟踪更新，输入%zu个人员检测结果", results.size());
+    
+    // 1. 清理过期的人员
+    cleanupExpiredPersons();
+    
+    // 2. 标记所有现有跟踪为未匹配
+    for (auto& person : m_trackedPersons) {
+        person.markMissed();
+    }
+    
+    // 3. 处理当前检测结果
+    for (const auto& result : results) {
+        if (result.faces.empty()) continue;
+        
+        // 计算人员边界框（基于人员检测结果）
+        cv::Rect personBBox(
+            static_cast<int>(result.personDetection.x1),
+            static_cast<int>(result.personDetection.y1),
+            static_cast<int>(result.personDetection.x2 - result.personDetection.x1),
+            static_cast<int>(result.personDetection.y2 - result.personDetection.y1)
+        );
+        
+        // 查找最佳匹配的现有跟踪
+        int bestMatchIndex = -1;
+        float bestOverlap = 0.0f;
+        
+        for (size_t i = 0; i < m_trackedPersons.size(); ++i) {
+            if (!m_trackedPersons[i].isActive) continue;
+            
+            float overlap = calculateBoundingBoxOverlap(personBBox, m_trackedPersons[i].lastBoundingBox);
+            if (overlap > m_timeWindowConfig.overlapThreshold && overlap > bestOverlap) {
+                bestOverlap = overlap;
+                bestMatchIndex = static_cast<int>(i);
+            }
+        }
+        
+        if (bestMatchIndex >= 0) {
+            // 更新现有跟踪
+            auto& person = m_trackedPersons[bestMatchIndex];
+            person.updateTracking(personBBox);
+            
+            // 更新人脸属性（使用最佳人脸）
+            if (result.hasValidFaces()) {
+                auto bestFace = result.getBestFace();
+                person.gender = bestFace.attributes.gender;
+                person.ageBracket = bestFace.attributes.ageBracket;
+                person.race = bestFace.attributes.race;
+                person.confidence = bestFace.confidence;
+            }
+            
+            LOGD("✅ 更新现有人员跟踪 ID=%d, overlap=%.2f", person.personId, bestOverlap);
+        } else {
+            // 创建新的人员跟踪
+            if (m_trackedPersons.size() < static_cast<size_t>(m_timeWindowConfig.maxTrackedPersons)) {
+                PersonTrackingInfo newPerson(m_nextPersonId++, personBBox);
+                
+                // 设置人脸属性
+                if (result.hasValidFaces()) {
+                    auto bestFace = result.getBestFace();
+                    newPerson.gender = bestFace.attributes.gender;
+                    newPerson.ageBracket = bestFace.attributes.ageBracket;
+                    newPerson.race = bestFace.attributes.race;
+                    newPerson.confidence = bestFace.confidence;
+                }
+                
+                m_trackedPersons.push_back(newPerson);
+                LOGD("🆕 创建新人员跟踪 ID=%d", newPerson.personId);
+            } else {
+                LOGW("⚠️ 达到最大跟踪人员数限制: %d", m_timeWindowConfig.maxTrackedPersons);
+            }
+        }
+    }
+    
+    LOGD("🔧 人员跟踪更新完成，当前活跃人员: %d", getActivePersonCount());
+}
+
+void StatisticsManager::cleanupExpiredPersons() {
+    // 注意：此方法假设已经持有锁
+    
+    auto now = std::chrono::steady_clock::now();
+    size_t originalSize = m_trackedPersons.size();
+    
+    // 移除过期的人员跟踪
+    m_trackedPersons.erase(
+        std::remove_if(m_trackedPersons.begin(), m_trackedPersons.end(),
+            [this, now](const PersonTrackingInfo& person) {
+                bool shouldRemove = person.shouldBeRemoved(m_timeWindowConfig.personTrackingWindow);
+                if (shouldRemove) {
+                    LOGD("🗑️ 清理过期人员跟踪 ID=%d, 存在时长=%.1fs", 
+                         person.personId, person.getLifetimeSeconds());
+                }
+                return shouldRemove;
+            }),
+        m_trackedPersons.end()
+    );
+    
+    size_t removedCount = originalSize - m_trackedPersons.size();
+    if (removedCount > 0) {
+        LOGD("🧹 清理了%zu个过期人员跟踪", removedCount);
+    }
+}
+
+int StatisticsManager::getActivePersonCount() const {
+    // 注意：此方法假设已经持有锁或在锁保护的上下文中调用
+    return static_cast<int>(std::count_if(m_trackedPersons.begin(), m_trackedPersons.end(),
+        [](const PersonTrackingInfo& person) { return person.isActive; }));
+}
+
+std::vector<PersonTrackingInfo> StatisticsManager::getActivePersons() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    
+    std::vector<PersonTrackingInfo> activePersons;
+    std::copy_if(m_trackedPersons.begin(), m_trackedPersons.end(),
+                 std::back_inserter(activePersons),
+                 [](const PersonTrackingInfo& person) { return person.isActive; });
+    
+    return activePersons;
+}
+
+// 🔧 辅助函数：计算边界框重叠度
+float StatisticsManager::calculateBoundingBoxOverlap(const cv::Rect& rect1, const cv::Rect& rect2) {
+    // 计算交集
+    cv::Rect intersection = rect1 & rect2;
+    if (intersection.area() == 0) return 0.0f;
+    
+    // 计算并集
+    int unionArea = rect1.area() + rect2.area() - intersection.area();
+    if (unionArea == 0) return 0.0f;
+    
+    // 返回IoU (Intersection over Union)
+    return static_cast<float>(intersection.area()) / static_cast<float>(unionArea);
+}

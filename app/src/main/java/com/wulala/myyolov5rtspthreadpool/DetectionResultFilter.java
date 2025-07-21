@@ -60,9 +60,37 @@ public class DetectionResultFilter {
             filteredResults.add(result);
         }
         
-        Log.d(TAG, String.format("检测结果过滤: %d -> %d (启用类别: %s, 置信度阈值: %.2f)", 
-                allResults.size(), filteredResults.size(), 
-                enabledClasses.toString(), confidenceThreshold));
+        // 🔧 详细的过滤日志，帮助诊断问题
+        if (allResults.size() > 0) {
+            StringBuilder detailLog = new StringBuilder();
+            detailLog.append(String.format("🔍 检测结果过滤: %d -> %d (启用类别: %s, 置信度阈值: %.2f)\n",
+                    allResults.size(), filteredResults.size(),
+                    enabledClasses.toString(), confidenceThreshold));
+
+            // 记录被过滤掉的结果详情
+            for (DetectionResult result : allResults) {
+                boolean classEnabled = enabledClasses.contains(result.className);
+                boolean confOk = result.confidence >= confidenceThreshold;
+                boolean valid = result.isValid();
+
+                if (!classEnabled || !confOk || !valid) {
+                    detailLog.append(String.format("  ❌ 过滤: %s(%.3f) - 类别:%s, 置信度:%s, 有效:%s\n",
+                            result.className, result.confidence,
+                            classEnabled ? "✓" : "✗",
+                            confOk ? "✓" : "✗",
+                            valid ? "✓" : "✗"));
+                } else {
+                    detailLog.append(String.format("  ✅ 保留: %s(%.3f)\n",
+                            result.className, result.confidence));
+                }
+            }
+
+            Log.d(TAG, detailLog.toString());
+        } else {
+            Log.d(TAG, String.format("🔍 检测结果过滤: %d -> %d (启用类别: %s, 置信度阈值: %.2f)",
+                    allResults.size(), filteredResults.size(),
+                    enabledClasses.toString(), confidenceThreshold));
+        }
         
         return filteredResults;
     }

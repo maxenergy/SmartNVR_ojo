@@ -485,3 +485,91 @@ Java_com_wulala_myyolov5rtspthreadpool_MainActivity_isModelAvailable(JNIEnv *env
     LOGD("JNI: Camera %d model %d available: %s", cameraIndex, modelType, available ? "true" : "false");
     return available ? JNI_TRUE : JNI_FALSE;
 }
+
+/**
+ * 🔧 新增：获取指定摄像头的当前检测结果
+ */
+extern "C"
+JNIEXPORT jobjectArray JNICALL
+Java_com_wulala_myyolov5rtspthreadpool_MainActivity_getCurrentDetectionResults(
+    JNIEnv *env, jobject thiz, jint cameraIndex) {
+
+    LOGD("🔧 JNI: 请求获取摄像头 %d 的当前检测结果", cameraIndex);
+
+    if (cameraIndex < 0 || cameraIndex >= MAX_CAMERAS) {
+        LOGE("JNI: Invalid camera index: %d", cameraIndex);
+        return nullptr;
+    }
+
+    auto it = cameraPlayers.find(cameraIndex);
+    if (it == cameraPlayers.end() || it->second == nullptr) {
+        LOGE("JNI: Camera %d player not found", cameraIndex);
+        return nullptr;
+    }
+
+    // 获取当前检测结果
+    std::vector<Detection> currentDetections;
+    bool hasResults = it->second->getCurrentDetectionResults(currentDetections);
+
+    if (!hasResults || currentDetections.empty()) {
+        LOGD("🔧 JNI: 摄像头 %d 当前无检测结果", cameraIndex);
+        return nullptr;
+    }
+
+    LOGD("🔧 JNI: 摄像头 %d 获取到 %zu 个检测结果", cameraIndex, currentDetections.size());
+
+    // 创建Java结果数组
+    jclass detection_class = env->FindClass("com/wulala/myyolov5rtspthreadpool/RealYOLOInference$DetectionResult");
+    if (!detection_class) {
+        LOGE("JNI: 找不到DetectionResult类");
+        return nullptr;
+    }
+
+    jmethodID constructor = env->GetMethodID(detection_class, "<init>",
+                                           "(IFFFFFLjava/lang/String;)V");
+    if (!constructor) {
+        LOGE("JNI: 找不到DetectionResult构造函数");
+        env->DeleteLocalRef(detection_class);
+        return nullptr;
+    }
+
+    jobjectArray result_array = env->NewObjectArray(currentDetections.size(), detection_class, nullptr);
+    if (!result_array) {
+        LOGE("JNI: 创建对象数组失败");
+        env->DeleteLocalRef(detection_class);
+        return nullptr;
+    }
+
+    for (size_t i = 0; i < currentDetections.size(); i++) {
+        const Detection& detection = currentDetections[i];
+
+        jstring class_name = env->NewStringUTF(detection.className.c_str());
+        if (!class_name) {
+            LOGE("JNI: 创建类名字符串失败");
+            continue;
+        }
+
+        jobject detection_obj = env->NewObject(detection_class, constructor,
+                                              detection.class_id,
+                                              detection.confidence,
+                                              (float)detection.box.x,
+                                              (float)detection.box.y,
+                                              (float)(detection.box.x + detection.box.width),
+                                              (float)(detection.box.y + detection.box.height),
+                                              class_name);
+
+        if (detection_obj) {
+            env->SetObjectArrayElement(result_array, i, detection_obj);
+            env->DeleteLocalRef(detection_obj);
+        } else {
+            LOGE("JNI: 创建检测对象失败");
+        }
+
+        env->DeleteLocalRef(class_name);
+    }
+
+    env->DeleteLocalRef(detection_class);
+
+    LOGD("🔧 JNI: 成功返回摄像头 %d 的 %zu 个检测结果", cameraIndex, currentDetections.size());
+    return result_array;
+}

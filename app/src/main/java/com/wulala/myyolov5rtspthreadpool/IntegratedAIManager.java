@@ -130,7 +130,99 @@ public class IntegratedAIManager {
     }
     
     /**
-     * 执行完整的AI检测流程
+     * 🔧 新增：基于现有检测结果进行AI分析（推荐使用）
+     * @param existingDetections 当前YOLOv5引擎的检测结果
+     * @param imageData 图像数据（用于人脸分析）
+     * @param width 图像宽度
+     * @param height 图像高度
+     * @return 检测结果
+     */
+    public AIDetectionResult performDetectionWithExistingResults(
+            java.util.List<RealYOLOInference.DetectionResult> existingDetections,
+            byte[] imageData, int width, int height) {
+
+        AIDetectionResult result = new AIDetectionResult();
+        result.timestamp = System.currentTimeMillis();
+        lastDetectionTime = result.timestamp;
+
+        try {
+            // 1. 使用现有的检测结果，无需重新推理
+            if (existingDetections != null && !existingDetections.isEmpty()) {
+                Log.d(TAG, "🔧 使用现有检测结果进行AI分析，检测到 " + existingDetections.size() + " 个目标");
+
+                // 保存所有检测结果
+                result.allDetections = new java.util.ArrayList<>(existingDetections);
+                result.objectDetectionSuccess = true;
+                result.detectedObjects = existingDetections.size();
+
+                // 筛选人员检测结果
+                java.util.List<RealYOLOInference.DetectionResult> personDetections = new java.util.ArrayList<>();
+                for (RealYOLOInference.DetectionResult detection : existingDetections) {
+                    if (detection.isPerson()) {
+                        personDetections.add(detection);
+                    }
+                }
+
+                result.detectedPersons = personDetections.size();
+                result.personDetections = personDetections;
+
+                totalDetections++;
+
+                Log.d(TAG, "现有检测结果分析完成，总目标: " + result.detectedObjects +
+                          ", 人员: " + result.detectedPersons);
+
+                // 2. 如果检测到人员，进行人脸分析
+                if (result.detectedPersons > 0 && imageData != null) {
+                    Log.d(TAG, "检测到 " + result.detectedPersons + " 个人员，开始人脸分析");
+
+                    FaceAnalysisResult faceResult = performRealFaceAnalysis(imageData, width, height, personDetections);
+
+                    if (faceResult.success) {
+                        result.faceAnalysisSuccess = true;
+                        result.detectedFaces = faceResult.faceCount;
+                        result.maleCount = faceResult.maleCount;
+                        result.femaleCount = faceResult.femaleCount;
+                        result.ageGroups = faceResult.ageGroups;
+                        result.faceDetections = faceResult.faceDetections;
+
+                        totalFaceAnalysis++;
+
+                        Log.d(TAG, "人脸分析完成: " + result.detectedFaces + " 个人脸, " +
+                              result.maleCount + " 男, " + result.femaleCount + " 女");
+                    } else {
+                        Log.w(TAG, "人脸分析失败: " + faceResult.errorMessage);
+                        result.faceAnalysisSuccess = false;
+                        result.errorMessage = "人脸分析失败: " + faceResult.errorMessage;
+                    }
+                } else {
+                    Log.d(TAG, "未检测到人员，跳过人脸分析");
+                    result.faceAnalysisSuccess = true; // 没有人员时认为成功
+                    result.detectedFaces = 0;
+                }
+
+                result.success = result.objectDetectionSuccess;
+
+            } else {
+                Log.d(TAG, "没有现有检测结果，跳过AI分析");
+                result.objectDetectionSuccess = true;
+                result.faceAnalysisSuccess = true;
+                result.success = true;
+                result.detectedObjects = 0;
+                result.detectedPersons = 0;
+                result.detectedFaces = 0;
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "AI分析异常", e);
+            result.success = false;
+            result.errorMessage = e.getMessage();
+        }
+
+        return result;
+    }
+
+    /**
+     * 执行完整的AI检测流程（独立推理，备用方法）
      * @param imageData 图像数据
      * @param width 图像宽度
      * @param height 图像高度
@@ -146,28 +238,44 @@ public class IntegratedAIManager {
             if (yoloInitialized) {
                 Log.d(TAG, "执行真实YOLOv5目标检测...");
 
-                // 执行真实YOLOv5推理
-                RealYOLOInference.PersonDetectionResult yoloResult =
-                    RealYOLOInference.AdvancedInference.performPersonDetection(
-                        imageData, width, height,
-                        YOLO_CONFIDENCE_THRESHOLD, YOLO_MIN_PERSON_SIZE);
+                // 首先获取所有类别的检测结果
+                RealYOLOInference.DetectionResult[] allDetections =
+                    RealYOLOInference.performInference(imageData, width, height);
 
-                if (yoloResult.success) {
-                    result.objectDetectionSuccess = true;
-                    result.detectedObjects = yoloResult.totalDetections;
-                    result.detectedPersons = yoloResult.personCount;
+                if (allDetections != null) {
+                    // 保存所有检测结果
+                    result.allDetections = new java.util.ArrayList<>();
+                    for (RealYOLOInference.DetectionResult detection : allDetections) {
+                        result.allDetections.add(detection);
+                    }
 
-                    // 保存人员检测结果用于后续人脸分析
-                    result.personDetections = yoloResult.personDetections;
+                    // 然后执行人员检测（用于人脸分析）
+                    RealYOLOInference.PersonDetectionResult yoloResult =
+                        RealYOLOInference.AdvancedInference.performPersonDetection(
+                            imageData, width, height,
+                            YOLO_CONFIDENCE_THRESHOLD, YOLO_MIN_PERSON_SIZE);
 
-                    totalDetections++;
+                    if (yoloResult.success) {
+                        result.objectDetectionSuccess = true;
+                        result.detectedObjects = allDetections.length; // 使用所有检测结果的数量
+                        result.detectedPersons = yoloResult.personCount;
 
-                    Log.d(TAG, "YOLOv5检测完成，总目标: " + result.detectedObjects +
-                          ", 人员: " + result.detectedPersons);
+                        // 保存人员检测结果用于后续人脸分析
+                        result.personDetections = yoloResult.personDetections;
+
+                        totalDetections++;
+
+                        Log.d(TAG, "YOLOv5检测完成，总目标: " + result.detectedObjects +
+                              ", 人员: " + result.detectedPersons + ", 所有类别: " + result.allDetections.size());
+                    } else {
+                        Log.e(TAG, "人员检测失败: " + yoloResult.errorMessage);
+                        result.objectDetectionSuccess = false;
+                        result.errorMessage = "人员检测失败: " + yoloResult.errorMessage;
+                    }
                 } else {
-                    Log.e(TAG, "YOLOv5检测失败: " + yoloResult.errorMessage);
+                    Log.e(TAG, "YOLOv5推理返回null结果");
                     result.objectDetectionSuccess = false;
-                    result.errorMessage = "YOLOv5检测失败: " + yoloResult.errorMessage;
+                    result.errorMessage = "YOLOv5推理失败";
                 }
             }
 
@@ -678,6 +786,7 @@ public class IntegratedAIManager {
 
         // 详细的检测结果
         public java.util.List<RealYOLOInference.DetectionResult> personDetections = null;
+        public java.util.List<RealYOLOInference.DetectionResult> allDetections = null; // 新增：所有类别的检测结果
         public java.util.List<FaceDetectionBox> faceDetections = null;
 
         /**

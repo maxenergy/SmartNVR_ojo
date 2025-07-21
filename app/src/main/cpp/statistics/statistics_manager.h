@@ -9,6 +9,75 @@
 #include <map>
 #include "face/face_analysis_manager.h"
 
+// 🔧 人员跟踪相关数据结构
+struct PersonTrackingInfo {
+    int personId;                                    // 人员ID
+    cv::Rect lastBoundingBox;                       // 最后检测到的边界框
+    std::chrono::steady_clock::time_point firstSeen; // 首次检测时间
+    std::chrono::steady_clock::time_point lastSeen;  // 最后检测时间
+    
+    // 人脸属性信息（用于统计）
+    int gender = -1;                                 // 性别 (0=女, 1=男, -1=未知)
+    int ageBracket = -1;                            // 年龄段 (0-8)
+    int race = -1;                                  // 种族 (0-4)
+    float confidence = 0.0f;                        // 置信度
+    
+    // 跟踪状态
+    bool isActive = true;                           // 是否活跃
+    int consecutiveMisses = 0;                      // 连续未检测到的次数
+    
+    PersonTrackingInfo(int id, const cv::Rect& bbox) 
+        : personId(id), lastBoundingBox(bbox) {
+        auto now = std::chrono::steady_clock::now();
+        firstSeen = lastSeen = now;
+    }
+    
+    // 更新跟踪信息
+    void updateTracking(const cv::Rect& bbox) {
+        lastBoundingBox = bbox;
+        lastSeen = std::chrono::steady_clock::now();
+        consecutiveMisses = 0;
+        isActive = true;
+    }
+    
+    // 标记为未检测到
+    void markMissed() {
+        consecutiveMisses++;
+        if (consecutiveMisses > 5) { // 连续5次未检测到则标记为非活跃
+            isActive = false;
+        }
+    }
+    
+    // 获取存在时长（秒）
+    double getLifetimeSeconds() const {
+        auto duration = lastSeen - firstSeen;
+        return std::chrono::duration<double>(duration).count();
+    }
+    
+    // 检查是否应该被清理（超过时间窗口）
+    bool shouldBeRemoved(std::chrono::seconds timeWindow) const {
+        auto now = std::chrono::steady_clock::now();
+        auto timeSinceLastSeen = now - lastSeen;
+        return timeSinceLastSeen > timeWindow;
+    }
+};
+
+// 时间窗口统计配置
+struct TimeWindowConfig {
+    std::chrono::seconds personTrackingWindow{30};   // 人员跟踪时间窗口
+    std::chrono::seconds statisticsWindow{60};       // 统计时间窗口
+    float overlapThreshold = 0.3f;                   // 边界框重叠阈值
+    int maxTrackedPersons = 50;                      // 最大跟踪人员数
+    int missThreshold = 5;                           // 连续未检测阈值
+    
+    bool isValid() const {
+        return personTrackingWindow.count() > 0 && 
+               statisticsWindow.count() > 0 &&
+               overlapThreshold > 0.0f && overlapThreshold < 1.0f &&
+               maxTrackedPersons > 0 && missThreshold > 0;
+    }
+};
+
 // 统计数据结构
 struct StatisticsData {
     // 基础统计
@@ -221,6 +290,11 @@ private:
     StatisticsData m_currentStats;
     HistoricalStatistics m_historicalStats;
     StatisticsConfig m_config;
+    
+    // 🔧 人员跟踪相关成员
+    TimeWindowConfig m_timeWindowConfig;
+    std::vector<PersonTrackingInfo> m_trackedPersons;
+    int m_nextPersonId = 1;                          // 下一个人员ID
 
     mutable std::mutex m_mutex;
 
@@ -243,6 +317,14 @@ public:
     void updateStatistics(const std::vector<FaceAnalysisResult>& results);
     void incrementFrameCount();
     void incrementAnalysisCount();
+    
+    // 🔧 人员跟踪相关方法
+    void setTimeWindowConfig(const TimeWindowConfig& config);
+    TimeWindowConfig getTimeWindowConfig() const;
+    void updatePersonTracking(const std::vector<FaceAnalysisResult>& results);
+    void cleanupExpiredPersons();
+    int getActivePersonCount() const;
+    std::vector<PersonTrackingInfo> getActivePersons() const;
     
     // 统计获取
     StatisticsData getCurrentStatistics() const;
@@ -285,6 +367,9 @@ private:
     
     // 日志记录
     void logStatisticsUpdate(const std::vector<FaceAnalysisResult>& results) const;
+    
+    // 🔧 人员跟踪辅助方法
+    float calculateBoundingBoxOverlap(const cv::Rect& rect1, const cv::Rect& rect2);
 };
 
 // 统计工具函数

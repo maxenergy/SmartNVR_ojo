@@ -99,15 +99,15 @@ void InspireFaceSession::release() {
 
 // ==================== InspireFaceImageProcessor 实现 ====================
 
-InspireFaceImageProcessor::InspireFaceImageProcessor() 
-    : m_imageBitmap(nullptr) {
+InspireFaceImageProcessor::InspireFaceImageProcessor() {
+    // 🔧 修复: 移除未使用的m_imageBitmap初始化
 }
 
 InspireFaceImageProcessor::~InspireFaceImageProcessor() {
-    if (m_imageBitmap) {
-        // TODO: 释放图像位图
-        m_imageBitmap = nullptr;
-    }
+    // 🔧 修复: 内存管理已完善
+    // 图像位图在createImageStreamFromMat方法中作为局部变量管理
+    // 使用HFReleaseImageBitmap正确释放，无需在析构函数中处理
+    LOGD("InspireFaceImageProcessor destroyed");
 }
 
 bool InspireFaceImageProcessor::createImageStreamFromMat(const cv::Mat& image, void** imageStream) {

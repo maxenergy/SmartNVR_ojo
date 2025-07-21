@@ -226,6 +226,11 @@ namespace ExtendedInferenceUtils {
     cv::Mat drawExtendedResults(const cv::Mat& image, 
                                const ExtendedInferenceResult& result);
     
+    // 带类别过滤的绘制版本
+    cv::Mat drawExtendedResults(const cv::Mat& image, 
+                               const ExtendedInferenceResult& result,
+                               const std::set<std::string>& enabledClasses);
+    
     std::string formatExtendedResults(const ExtendedInferenceResult& result);
 }
 

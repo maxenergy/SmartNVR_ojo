@@ -39,8 +39,9 @@ public class Settings implements Serializable {
             s = (Settings) ois.readObject();
         } catch (FileNotFoundException e) {
             Log.d(TAG, "No saved settings found, will create a new one");
-            // 添加安全的占位符URL，避免连接到无效的演示URL
-            s.cameras.add(new Camera("示例摄像头", "rtsp://admin:sharpi1688@192.168.1.2:554/1/1"));  // 使用本地网络示例URL
+            // 添加默认摄像头配置
+            s.cameras.add(new Camera("主摄像头", "rtsp://192.168.31.22:8554/unicast"));
+            s.cameras.add(new Camera("副摄像头", "rtsp://192.168.31.64:8554/unicast"));
         } catch (IOException e) {
             Log.e(TAG, "Unable to load settings from disk: " + e.toString());
         } catch (ClassNotFoundException e) {

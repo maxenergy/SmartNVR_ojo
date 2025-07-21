@@ -30,7 +30,7 @@ public class SharedPreferencesManager {
 
     public static String loadRtspUrl(Context ctx) {
         SharedPreferences sharedPref = ctx.getSharedPreferences("yolov5_settings", Context.MODE_PRIVATE);
-        return sharedPref.getString(SP_RTSP_URL, "rtsp://admin:sharpi1688@192.168.1.2:554/1/1");  // 使用本地网络示例URL
+        return sharedPref.getString(SP_RTSP_URL, "rtsp://192.168.31.22:8554/unicast");  // 主摄像头地址
     }
 
     public static void saveModelConfidence(Context ctx, float confidence) {

@@ -24,9 +24,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity
-            android:name=".MainMenuActivity"
-            android:exported="true" />
+
         <activity
             android:name=".ui.SettingsActivity"
             android:exported="false" />
@@ -58,11 +56,11 @@
             android:name=".RealYOLOTestActivity"
             android:exported="true"
             android:label="Real YOLO Test" />
+
         <activity
-            android:name=".RealTimeVideoActivity"
+            android:name=".DetectionSettingsTestActivity"
             android:exported="true"
-            android:label="Real Time Video AI"
-            android:screenOrientation="landscape" />
+            android:label="Detection Settings Test" />
     </application>
 
 </manifest>

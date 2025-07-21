@@ -148,7 +148,8 @@ public:
     bool createImageStreamFromROI(const cv::Mat& image, const cv::Rect& roi, void** imageStream);
 
 private:
-    void* m_imageBitmap;    // 临时图像位图句柄
+    // 🔧 移除未使用的m_imageBitmap成员变量，避免内存管理混淆
+    // 图像位图现在在方法内部作为局部变量管理，使用后立即释放
 };
 
 /**

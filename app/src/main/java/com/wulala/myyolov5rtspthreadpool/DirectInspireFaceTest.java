@@ -52,4 +52,16 @@ public class DirectInspireFaceTest {
      * @return 人脸分析结果对象
      */
     public static native IntegratedAIManager.FaceAnalysisNativeResult getFaceAnalysisResult();
+    
+    /**
+     * 🔧 新增：获取C++层统计数据
+     * 用于统一人员统计架构，减少Java-C++数据传递开销
+     * @return 批量统计结果
+     */
+    public static native BatchStatisticsResult getCurrentStatistics();
+    
+    /**
+     * 🔧 新增：重置C++层统计数据
+     */
+    public static native void resetStatistics();
 }

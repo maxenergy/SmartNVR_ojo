@@ -15,6 +15,10 @@ import android.widget.GridLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+// 🔧 新增：统计架构优化相关导入
+import com.wulala.myyolov5rtspthreadpool.BatchStatisticsResult;
+import com.wulala.myyolov5rtspthreadpool.DirectInspireFaceTest;
+
 import com.wulala.myyolov5rtspthreadpool.DetectionResultFilter;
 import com.wulala.myyolov5rtspthreadpool.IntegratedAIManager;
 import com.wulala.myyolov5rtspthreadpool.RealYOLOInference;
@@ -48,13 +52,15 @@ public class MultiCameraView extends GridLayout {
         TextView statsView;       // 统计信息显示
         String cameraName;
         boolean isActive = false;
-        boolean aiAnalysisEnabled = false;
+        boolean aiAnalysisEnabled = true;  // 🔧 默认启用AI分析
 
-        // AI分析相关数据
-        private int currentPersonCount = 0;
-        private int totalPersonCount = 0;
-        private int maleCount = 0;
-        private int femaleCount = 0;
+        // 🔧 统计架构优化：移除Java层简单统计，使用C++层统计数据
+        // 统计数据现在通过DirectInspireFaceTest.getCurrentStatistics()从C++层获取
+        private BatchStatisticsResult lastStatistics = new BatchStatisticsResult();
+        
+        // 🔧 JNI调用频率优化：减少统计数据获取频率
+        private int statisticsUpdateCounter = 0;
+        private static final int STATISTICS_UPDATE_INTERVAL = 5; // 每5帧更新一次统计数据
         private List<RealYOLOInference.DetectionResult> lastDetections = new ArrayList<>();
         private List<IntegratedAIManager.FaceDetectionBox> lastFaceDetections = new ArrayList<>();
 
@@ -109,12 +115,21 @@ public class MultiCameraView extends GridLayout {
 
             // 先应用检测过滤器，然后更新统计数据
 
-            // 应用检测过滤器
+            // 应用检测过滤器 - 使用所有检测结果而不仅仅是人员检测
             List<DetectionResultFilter.DetectionResult> allDetections = new ArrayList<>();
-            if (result.personDetections != null) {
+
+            // 优先使用allDetections（包含所有类别）
+            if (result.allDetections != null && !result.allDetections.isEmpty()) {
+                for (RealYOLOInference.DetectionResult detection : result.allDetections) {
+                    allDetections.add(DetectionResultFilter.fromRealYOLOResult(detection));
+                }
+                android.util.Log.d(TAG, "使用所有检测结果进行过滤: " + result.allDetections.size() + " 个检测结果");
+            } else if (result.personDetections != null) {
+                // 回退到只使用人员检测结果（向后兼容）
                 for (RealYOLOInference.DetectionResult detection : result.personDetections) {
                     allDetections.add(DetectionResultFilter.fromRealYOLOResult(detection));
                 }
+                android.util.Log.d(TAG, "回退使用人员检测结果进行过滤: " + result.personDetections.size() + " 个检测结果");
             }
 
             // 过滤检测结果
@@ -123,24 +138,47 @@ public class MultiCameraView extends GridLayout {
 
             // 转换回RealYOLOInference.DetectionResult格式
             lastDetections = new ArrayList<>();
+            int personCount = 0;
             for (DetectionResultFilter.DetectionResult filtered : filteredDetections) {
-                lastDetections.add(DetectionResultFilter.toRealYOLOResult(filtered));
+                RealYOLOInference.DetectionResult detection = DetectionResultFilter.toRealYOLOResult(filtered);
+                lastDetections.add(detection);
+
+                // 只计算人员数量用于人脸分析
+                if (detection.isPerson()) {
+                    personCount++;
+                }
             }
 
-            // 更新人员计数为过滤后的结果
-            currentPersonCount = lastDetections.size();
-
-            // 更新统计数据
-            if (currentPersonCount > 0) {
-                totalPersonCount += currentPersonCount;
-                // 只有检测到人员时才更新人脸数据
-                maleCount = result.maleCount;      // 使用当前值，不累积
-                femaleCount = result.femaleCount;  // 使用当前值，不累积
+            // 🔧 JNI调用频率优化：每5帧更新一次统计数据，减少JNI开销
+            statisticsUpdateCounter++;
+            boolean shouldUpdateStatistics = (statisticsUpdateCounter % STATISTICS_UPDATE_INTERVAL == 0);
+            
+            if (shouldUpdateStatistics) {
+                try {
+                    // 从C++层获取完整的统计数据
+                    long startTime = System.currentTimeMillis();
+                    lastStatistics = DirectInspireFaceTest.getCurrentStatistics();
+                    long jniCallTime = System.currentTimeMillis() - startTime;
+                    
+                    if (lastStatistics != null && lastStatistics.success) {
+                        android.util.Log.d(TAG, "✅ 从C++层获取统计数据: " + lastStatistics.formatForDisplay() + 
+                                          " (JNI耗时: " + jniCallTime + "ms)");
+                    } else {
+                        android.util.Log.w(TAG, "⚠️ C++层统计数据获取失败，使用默认值");
+                        lastStatistics = new BatchStatisticsResult();
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e(TAG, "❌ 获取C++层统计数据异常: " + e.getMessage());
+                    lastStatistics = new BatchStatisticsResult();
+                }
+                
+                android.util.Log.d(TAG, "🔧 JNI优化: 第" + statisticsUpdateCounter + "帧，统计数据已更新");
             } else {
-                // 没有检测到人员时，清零人脸数据
-                maleCount = 0;
-                femaleCount = 0;
+                android.util.Log.v(TAG, "🔧 JNI优化: 第" + statisticsUpdateCounter + "帧，跳过统计数据更新");
             }
+
+            android.util.Log.d(TAG, "过滤后检测结果: 总计=" + lastDetections.size() +
+                              ", C++统计=" + lastStatistics.formatForDisplay());
 
             lastFaceDetections = result.faceDetections != null ?
                 new ArrayList<>(result.faceDetections) : new ArrayList<>();
@@ -153,10 +191,23 @@ public class MultiCameraView extends GridLayout {
         /**
          * 更新统计信息显示
          */
+        /**
+         * 🔧 优化：使用C++层统计数据更新显示
+         */
         private void updateStatsDisplay() {
-            String statsText = String.format("👥%d 👨%d 👩%d",
-                currentPersonCount, maleCount, femaleCount);
-            statsView.setText(statsText);
+            if (lastStatistics != null && lastStatistics.success) {
+                // 使用C++层的统计数据
+                String statsText = lastStatistics.formatForDisplay();
+                statsView.setText(statsText);
+                
+                // 可选：显示更详细的信息（如果需要）
+                if (lastStatistics.getTotalGenderCount() > 0) {
+                    android.util.Log.d(TAG, "详细统计: " + lastStatistics.getDetailedInfo());
+                }
+            } else {
+                // 回退到默认显示
+                statsView.setText("👥0 👨0 👩0");
+            }
         }
 
         /**
@@ -182,6 +233,42 @@ public class MultiCameraView extends GridLayout {
             } catch (Exception e) {
                 android.util.Log.e("MultiCameraView", "更新叠加层失败", e);
             }
+        }
+
+        /**
+         * 根据检测类别获取对应的绘制画笔
+         */
+        private Paint getBoxPaintForClass(String className) {
+            Paint paint = new Paint();
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(2.0f);
+            paint.setAntiAlias(true);
+
+            // 根据类别设置不同颜色
+            switch (className.toLowerCase()) {
+                case "person":
+                    paint.setColor(Color.GREEN);
+                    break;
+                case "car":
+                    paint.setColor(Color.BLUE);
+                    break;
+                case "bicycle":
+                    paint.setColor(Color.CYAN);
+                    break;
+                case "motorcycle":
+                    paint.setColor(Color.MAGENTA);
+                    break;
+                case "bus":
+                    paint.setColor(Color.YELLOW);
+                    break;
+                case "truck":
+                    paint.setColor(Color.RED);
+                    break;
+                default:
+                    paint.setColor(Color.WHITE);
+                    break;
+            }
+            return paint;
         }
 
         /**
@@ -214,8 +301,8 @@ public class MultiCameraView extends GridLayout {
                 backgroundPaint.setColor(Color.BLACK);
                 backgroundPaint.setAlpha(128);
 
-                // 绘制检测框
-                if (lastDetections != null && !lastDetections.isEmpty() && currentPersonCount > 0) {
+                // 绘制检测框（显示所有过滤后的检测结果，不仅仅是人员）
+                if (lastDetections != null && !lastDetections.isEmpty()) {
                     for (int i = 0; i < lastDetections.size(); i++) {
                         RealYOLOInference.DetectionResult detection = lastDetections.get(i);
 
@@ -228,12 +315,15 @@ public class MultiCameraView extends GridLayout {
                         float right = detection.x2 * scaleX;
                         float bottom = detection.y2 * scaleY;
 
-                        // 绘制人员检测框
-                        RectF personRect = new RectF(left, top, right, bottom);
-                        canvas.drawRect(personRect, personBoxPaint);
+                        // 绘制检测框（根据类别设置颜色）
+                        Paint boxPaint = getBoxPaintForClass(detection.className);
+                        RectF detectionRect = new RectF(left, top, right, bottom);
+                        canvas.drawRect(detectionRect, boxPaint);
 
-                        // 绘制标签
-                        String label = String.format("Person %d", i + 1);
+                        // 绘制真实的类别标签和置信度
+                        String className = detection.className;
+                        float confidence = detection.confidence;
+                        String label = String.format("%s %.2f", className, confidence);
                         drawLabelWithBackground(canvas, label, left, top - 5,
                                               textPaint, backgroundPaint);
 
@@ -268,46 +358,16 @@ public class MultiCameraView extends GridLayout {
                         drawLabelWithBackground(canvas, confidenceLabel, faceLeft,
                                               faceBottom + 35, textPaint, backgroundPaint);
                     }
-                } else if (currentPersonCount > 0 && (maleCount > 0 || femaleCount > 0)) {
-                    // 如果没有真实的人脸检测框，回退到模拟显示
-                    android.util.Log.w(TAG, "使用模拟人脸检测框 - 缺少真实人脸检测数据");
+                } else if (lastStatistics != null && lastStatistics.success && 
+                          lastStatistics.personCount > 0 && lastStatistics.getTotalGenderCount() > 0) {
+                    // 如果没有真实的人脸检测框，显示等待提示
+                    android.util.Log.w(TAG, "等待真实人脸检测数据...");
 
-                    if (lastDetections != null && !lastDetections.isEmpty()) {
-                        for (int i = 0; i < Math.min(lastDetections.size(), maleCount + femaleCount); i++) {
-                            RealYOLOInference.DetectionResult detection = lastDetections.get(i);
-
-                            // 缩放坐标到当前视图尺寸
-                            float scaleX = (float) width / 640.0f;
-                            float scaleY = (float) height / 480.0f;
-
-                            float left = detection.x1 * scaleX;
-                            float top = detection.y1 * scaleY;
-                            float right = detection.x2 * scaleX;
-                            float bottom = detection.y2 * scaleY;
-
-                            // 绘制模拟人脸框（在人员框内）
-                            float faceWidth = (right - left) * 0.6f;
-                            float faceHeight = (bottom - top) * 0.4f;
-                            float faceLeft = left + (right - left - faceWidth) / 2;
-                            float faceTop = top + (bottom - top) * 0.1f;
-
-                            RectF faceRect = new RectF(faceLeft, faceTop,
-                                                      faceLeft + faceWidth, faceTop + faceHeight);
-                            canvas.drawRect(faceRect, faceBoxPaint);
-
-                            // 绘制性别年龄标签（基于实际的人脸分析结果）
-                            String genderAge;
-                            if (i < maleCount) {
-                                genderAge = "男性, 25-35岁 (模拟)";
-                            } else if (i < maleCount + femaleCount) {
-                                genderAge = "女性, 20-30岁 (模拟)";
-                            } else {
-                                genderAge = "分析中...";
-                            }
-                            drawLabelWithBackground(canvas, genderAge, faceLeft,
-                                                  faceTop + faceHeight + 15, textPaint, backgroundPaint);
-                        }
-                    }
+                    // 在界面上显示等待人脸分析的提示
+                    String waitingText = "正在进行人脸分析...";
+                    float textX = getWidth() / 2f - textPaint.measureText(waitingText) / 2f;
+                    float textY = getHeight() - 50f;
+                    drawLabelWithBackground(canvas, waitingText, textX, textY, textPaint, backgroundPaint);
                 }
 
                 return bitmap;
@@ -434,7 +494,10 @@ public class MultiCameraView extends GridLayout {
             layoutParams.height = 0;
             layoutParams.columnSpec = GridLayout.spec(i % getColumnCount(), 1f);
             layoutParams.rowSpec = GridLayout.spec(i / getColumnCount(), 1f);
-            layoutParams.setMargins(2, 2, 2, 2);
+
+            // 增加底部边距以避免覆盖FloatingActionButton区域
+            int bottomMargin = (cameraCount == 1) ? 120 : 2; // 单摄像头时增加底部边距
+            layoutParams.setMargins(2, 2, 2, bottomMargin);
             container.setLayoutParams(layoutParams);
             
             // 设置Surface回调
@@ -462,8 +525,15 @@ public class MultiCameraView extends GridLayout {
                 }
             });
             
-            // 添加点击事件用于切换焦点
+            // 添加点击事件用于切换焦点，但避免拦截FloatingActionButton区域
             container.setOnClickListener(v -> {
+                // 检查点击位置是否在FloatingActionButton区域内
+                int[] location = new int[2];
+                v.getLocationOnScreen(location);
+
+                // 获取点击的相对坐标（这里我们简化处理，直接允许点击）
+                // 实际的FloatingActionButton区域检测可以通过Activity传递坐标来实现
+
                 // TODO: 实现焦点切换，将选中的摄像头放大显示
                 android.util.Log.d(TAG, "Camera " + cameraIndex + " clicked: " + cameraName);
             });
@@ -474,6 +544,16 @@ public class MultiCameraView extends GridLayout {
         
         android.util.Log.d(TAG, "Setup " + cameraCount + " cameras in " + 
                           getRowCount() + "x" + getColumnCount() + " grid");
+        
+        // 🔧 确保布局正确应用，特别是4路摄像头的2x2分割
+        post(new Runnable() {
+            @Override
+            public void run() {
+                requestLayout();
+                invalidate();
+                android.util.Log.d(TAG, "🔧 多摄像头布局已刷新: " + getRowCount() + "x" + getColumnCount());
+            }
+        });
     }
     
     /**
@@ -509,6 +589,17 @@ public class MultiCameraView extends GridLayout {
         
         setRowCount(rows);
         setColumnCount(cols);
+        
+        // 🔧 强制刷新布局，确保2x2分割正确显示
+        post(new Runnable() {
+            @Override
+            public void run() {
+                requestLayout();
+                invalidate();
+            }
+        });
+        
+        android.util.Log.d(TAG, "🔧 布局已设置为 " + rows + "x" + cols + " (摄像头数量: " + cameraCount + ")");
         
         return new GridLayout.LayoutParams();
     }
@@ -580,63 +671,7 @@ public class MultiCameraView extends GridLayout {
         }
     }
 
-    /**
-     * 模拟AI分析结果更新（用于测试）
-     * 注意：此方法已被修改，只有在真实检测到人员时才会显示人脸识别信息
-     */
-    public void simulateAIResults(int cameraIndex) {
-        if (cameraIndex >= 0 && cameraIndex < cameraViews.size()) {
-            // 创建模拟的AI检测结果
-            IntegratedAIManager.AIDetectionResult mockResult = new IntegratedAIManager.AIDetectionResult();
-            mockResult.success = true;
 
-            // 随机决定是否检测到人员（模拟真实场景）
-            boolean hasPersons = Math.random() > 0.3; // 70%概率检测到人员
-
-            if (hasPersons) {
-                mockResult.detectedPersons = 1 + (int)(Math.random() * 2); // 1-2个人
-                mockResult.detectedObjects = mockResult.detectedPersons + (int)(Math.random() * 3); // 可能有其他物体
-
-                // 只有检测到人员时才进行人脸分析
-                mockResult.detectedFaces = mockResult.detectedPersons;
-                mockResult.maleCount = (int)(Math.random() * (mockResult.detectedPersons + 1));
-                mockResult.femaleCount = mockResult.detectedPersons - mockResult.maleCount;
-                mockResult.faceAnalysisSuccess = true;
-
-                // 创建模拟检测框
-                mockResult.personDetections = new ArrayList<>();
-                for (int i = 0; i < mockResult.detectedPersons; i++) {
-                    float x1 = 50 + i * 100;
-                    float y1 = 50 + i * 50;
-                    float x2 = x1 + 80;
-                    float y2 = y1 + 120;
-                    float confidence = 0.8f + (float)(Math.random() * 0.2f);
-
-                    RealYOLOInference.DetectionResult detection = new RealYOLOInference.DetectionResult(
-                        0, confidence, x1, y1, x2, y2, "person");
-                    mockResult.personDetections.add(detection);
-                }
-
-                android.util.Log.d(TAG, "Simulated AI results for camera " + cameraIndex +
-                                  ": " + mockResult.detectedPersons + " persons with face analysis");
-            } else {
-                // 没有检测到人员，确保所有人脸相关数据为0
-                mockResult.detectedPersons = 0;
-                mockResult.detectedObjects = (int)(Math.random() * 3); // 可能有其他物体
-                mockResult.detectedFaces = 0;
-                mockResult.maleCount = 0;
-                mockResult.femaleCount = 0;
-                mockResult.faceAnalysisSuccess = false;
-                mockResult.personDetections = new ArrayList<>();
-                mockResult.ageGroups = new int[9]; // 确保年龄组数据也为0
-
-                android.util.Log.d(TAG, "Simulated AI results for camera " + cameraIndex +
-                                  ": 0 persons, no face analysis");
-            }
-
-            updateAIResults(cameraIndex, mockResult);
-        }
-    }
 
     /**
      * 获取摄像头数量
@@ -653,5 +688,33 @@ public class MultiCameraView extends GridLayout {
             return cameraViews.get(cameraIndex).aiAnalysisEnabled;
         }
         return false;
+    }
+
+    /**
+     * 获取指定摄像头的当前帧
+     */
+    public android.graphics.Bitmap getCurrentFrame(int cameraIndex) {
+        if (cameraIndex >= 0 && cameraIndex < cameraViews.size()) {
+            CameraViewHolder cameraView = cameraViews.get(cameraIndex);
+            if (cameraView.surfaceView != null) {
+                try {
+                    // 从SurfaceView获取当前帧
+                    // 注意：这需要在主线程中调用
+                    android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(
+                        cameraView.surfaceView.getWidth(),
+                        cameraView.surfaceView.getHeight(),
+                        android.graphics.Bitmap.Config.ARGB_8888
+                    );
+
+                    android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+                    cameraView.surfaceView.draw(canvas);
+
+                    return bitmap;
+                } catch (Exception e) {
+                    android.util.Log.e(TAG, "获取摄像头 " + cameraIndex + " 当前帧失败", e);
+                }
+            }
+        }
+        return null;
     }
 }

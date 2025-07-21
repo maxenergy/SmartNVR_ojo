@@ -61,8 +61,10 @@ public class DetectionSettingsManager {
     public Set<String> getEnabledClasses() {
         Set<String> defaultClasses = new HashSet<>();
         defaultClasses.add("person"); // 默认只启用人员检测
-        
-        return prefs.getStringSet(KEY_ENABLED_CLASSES, defaultClasses);
+
+        Set<String> enabledClasses = prefs.getStringSet(KEY_ENABLED_CLASSES, defaultClasses);
+        Log.d(TAG, "获取启用的检测类别: " + enabledClasses.toString());
+        return enabledClasses;
     }
     
     /**
@@ -87,15 +89,20 @@ public class DetectionSettingsManager {
      * 启用或禁用某个类别
      */
     public void setClassEnabled(String className, boolean enabled) {
+        Log.d(TAG, "设置类别状态: " + className + " -> " + enabled);
         Set<String> enabledClasses = new HashSet<>(getEnabledClasses());
-        
+        Log.d(TAG, "当前启用类别: " + enabledClasses.toString());
+
         if (enabled) {
             enabledClasses.add(className);
+            Log.d(TAG, "添加类别: " + className);
         } else {
             enabledClasses.remove(className);
+            Log.d(TAG, "移除类别: " + className);
         }
-        
+
         setEnabledClasses(enabledClasses);
+        Log.d(TAG, "类别设置完成，新的启用类别: " + enabledClasses.toString());
     }
     
     /**

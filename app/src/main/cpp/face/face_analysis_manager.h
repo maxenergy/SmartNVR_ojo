@@ -188,6 +188,34 @@ public:
     bool analyzePersonRegions(const cv::Mat& image, 
                              const std::vector<InferenceResult>& personDetections,
                              std::vector<FaceAnalysisResult>& results);
+
+    
+    // 简化的人脸分析接口 (用于JNI调用)
+    struct PersonDetection {
+        float x1, y1, x2, y2;
+        float confidence;
+    };
+    
+    struct SimpleFaceAnalysisResult {
+        bool success = false;
+        std::string errorMessage;
+        int faceCount = 0;
+        int maleCount = 0;
+        int femaleCount = 0;
+        int ageGroups[9] = {0}; // 年龄组分布
+        
+        struct Face {
+            float x1, y1, x2, y2;
+            float confidence;
+            int gender; // 0: 女性, 1: 男性
+            int age;    // 年龄段 0-8
+        };
+        std::vector<Face> faces;
+    };
+    
+    bool analyzeFaces(const cv::Mat& image, 
+                     const std::vector<PersonDetection>& personDetections,
+                     SimpleFaceAnalysisResult& result);
     
     // 配置管理
     void setConfig(const FaceAnalysisConfig& config);

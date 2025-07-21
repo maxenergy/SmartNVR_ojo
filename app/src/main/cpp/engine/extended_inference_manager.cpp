@@ -570,6 +570,51 @@ cv::Mat drawExtendedResults(const cv::Mat& image, const ExtendedInferenceResult&
     return resultImage;
 }
 
+// 带类别过滤的绘制版本
+cv::Mat drawExtendedResults(const cv::Mat& image, 
+                           const ExtendedInferenceResult& result,
+                           const std::set<std::string>& enabledClasses) {
+    cv::Mat resultImage = image.clone();
+    
+    // 绘制目标检测结果（只绘制启用的类别）
+    for (const auto& detection : result.objectDetections.results) {
+        // 检查类别是否启用
+        if (enabledClasses.find(detection.class_name) == enabledClasses.end()) {
+            continue; // 跳过未启用的类别
+        }
+        
+        cv::Rect rect(static_cast<int>(detection.x1), static_cast<int>(detection.y1),
+                     static_cast<int>(detection.x2 - detection.x1),
+                     static_cast<int>(detection.y2 - detection.y1));
+        
+        cv::Scalar color = (detection.class_name == "person") ? cv::Scalar(0, 255, 0) : cv::Scalar(255, 0, 0);
+        cv::rectangle(resultImage, rect, color, 2);
+        
+        std::string label = detection.class_name + " " + std::to_string(static_cast<int>(detection.confidence * 100)) + "%";
+        cv::putText(resultImage, label, cv::Point(rect.x, rect.y - 5),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
+    }
+    
+    // 绘制人脸分析结果（只有当person类别启用时才绘制）
+    if (enabledClasses.find("person") != enabledClasses.end()) {
+        for (const auto& faceResult : result.faceAnalysisResults) {
+            for (const auto& face : faceResult.faces) {
+                cv::rectangle(resultImage, face.faceRect, cv::Scalar(255, 255, 0), 1);
+                
+                if (face.attributes.isValid()) {
+                    std::string text = face.attributes.getGenderString() + " " + 
+                                     face.attributes.getAgeBracketString();
+                    cv::putText(resultImage, text, 
+                               cv::Point(face.faceRect.x, face.faceRect.y - 5),
+                               cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 0), 1);
+                }
+            }
+        }
+    }
+    
+    return resultImage;
+}
+
 std::string formatExtendedResults(const ExtendedInferenceResult& result) {
     std::stringstream ss;
     

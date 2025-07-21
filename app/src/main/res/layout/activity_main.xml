@@ -20,12 +20,14 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_marginEnd="16dp"
-        android:layout_marginBottom="88dp"
+        android:layout_marginBottom="104dp"
         android:src="@drawable/ic_eye"
         app:srcCompat="@drawable/ic_eye"
         app:tint="@color/white"
         android:backgroundTint="@color/purple_500"
-        android:contentDescription="切换AI分析"/>
+        android:contentDescription="切换AI分析"
+        android:elevation="8dp"
+        app:elevation="8dp"/>
 
     <!-- 设置按钮 -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -34,11 +36,13 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_marginEnd="16dp"
-        android:layout_marginBottom="16dp"
+        android:layout_marginBottom="32dp"
         android:src="@drawable/ic_settings"
         app:srcCompat="@drawable/ic_settings"
         app:tint="@color/white"
         android:backgroundTint="@color/fab_background"
-        android:contentDescription="设置"/>
+        android:contentDescription="设置"
+        android:elevation="8dp"
+        app:elevation="8dp"/>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
