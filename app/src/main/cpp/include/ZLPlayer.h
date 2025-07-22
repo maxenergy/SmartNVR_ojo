@@ -30,6 +30,9 @@ class InferenceManager;
 class FaceAnalysisManager;
 class StatisticsManager;
 
+// 🔧 Phase 1: 前向声明人员跟踪器
+class PersonTracker;
+
 typedef struct g_rknn_app_context_t {
     FILE *out_fp;
     MppDecoder *decoder;

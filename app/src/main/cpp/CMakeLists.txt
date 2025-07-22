@@ -84,6 +84,12 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         # �🔧 新增: 人员统计和人脸识别功能（使用我们的新实现）
         src/face_analysis_manager.cpp
         src/statistics_manager.cpp
+
+        # 🔧 Phase 1: 增强统计功能JNI接口
+        jni/enhanced_statistics_jni.cpp
+
+        # 🔧 Phase 1: 基于IoU的人员跟踪算法
+        src/person_tracker.cpp
         )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}

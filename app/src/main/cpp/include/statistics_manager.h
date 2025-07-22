@@ -7,6 +7,50 @@
 #include <chrono>
 #include "person_detection_types.h"
 
+// 🔧 Phase 1: 增强的统计数据结构
+struct EnhancedPersonStatistics {
+    // 基础统计
+    int camera_id;
+    int current_person_count;
+    int total_person_count;
+
+    // 区域统计
+    int enter_count;
+    int exit_count;
+
+    // 时间序列数据
+    std::vector<int> hourly_counts;
+    std::chrono::steady_clock::time_point last_reset;
+
+    // 性能指标
+    double avg_detection_time;
+    double avg_tracking_time;
+    int frames_processed;
+    int frames_skipped;
+
+    // 构造函数
+    EnhancedPersonStatistics() :
+        camera_id(0), current_person_count(0), total_person_count(0),
+        enter_count(0), exit_count(0), hourly_counts(24, 0),
+        last_reset(std::chrono::steady_clock::now()),
+        avg_detection_time(0.0), avg_tracking_time(0.0),
+        frames_processed(0), frames_skipped(0) {}
+};
+
+// 🔧 Phase 1: 全局统计收集器
+class StatisticsCollector {
+private:
+    std::mutex stats_mutex;
+    std::map<int, EnhancedPersonStatistics> camera_stats;
+
+public:
+    void updateCameraStats(int camera_id, const EnhancedPersonStatistics& stats);
+    EnhancedPersonStatistics getCameraStats(int camera_id);
+    std::map<int, EnhancedPersonStatistics> getAllStats();
+    void resetStats();
+    void recordPerformanceMetric(int camera_id, const std::string& metric, double value);
+};
+
 /**
  * @brief 统计管理器
  * 负责管理人员统计数据，包括计数、年龄分布、性别分布等
@@ -93,6 +137,40 @@ public:
      */
     bool loadStatisticsFromFile(const std::string& file_path);
 
+    // 🔧 Phase 1: 增强接口
+    /**
+     * @brief 更新增强统计数据
+     * @param stats 增强统计数据
+     */
+    void updateEnhancedStatistics(const EnhancedPersonStatistics& stats);
+
+    /**
+     * @brief 获取增强统计数据
+     * @param camera_id 摄像头ID
+     * @return 增强统计数据
+     */
+    EnhancedPersonStatistics getEnhancedStatistics(int camera_id);
+
+    /**
+     * @brief 记录进入事件
+     * @param camera_id 摄像头ID
+     */
+    void recordEnterEvent(int camera_id);
+
+    /**
+     * @brief 记录离开事件
+     * @param camera_id 摄像头ID
+     */
+    void recordExitEvent(int camera_id);
+
+    /**
+     * @brief 记录性能指标
+     * @param camera_id 摄像头ID
+     * @param metric 指标名称
+     * @param value 指标值
+     */
+    void recordPerformanceMetric(int camera_id, const std::string& metric, double value);
+
 private:
     std::mutex mutex_;
     
@@ -122,5 +200,8 @@ private:
     int getTimeDifferenceMinutes(const std::chrono::steady_clock::time_point& time1,
                                 const std::chrono::steady_clock::time_point& time2);
 };
+
+// 🔧 Phase 1: 全局统计收集器实例声明
+extern StatisticsCollector g_stats_collector;
 
 #endif // STATISTICS_MANAGER_H

@@ -16,6 +16,7 @@
 #include "../types/person_detection_types.h" // 🔧 新增: 人员检测数据类型
 #include "../include/face_analysis_manager.h" // 🔧 新增: 人脸分析管理器
 #include "../include/statistics_manager.h"    // 🔧 新增: 统计管理器
+#include "../include/person_tracker.h"        // 🔧 Phase 1: 人员跟踪器
 // Yolov8ThreadPool *yolov8_thread_pool;   // 线程池
 
 extern pthread_mutex_t windowMutex;     // 静态初始化 所
@@ -1625,10 +1626,46 @@ void ZLPlayer::processPersonDetectionAndFaceAnalysis(cv::Mat& frame,
     }
 }
 
-// 🔧 实现：简化的人员跟踪功能
+// 🔧 Phase 1: 增强的人员跟踪功能
 std::vector<Detection> ZLPlayer::performPersonTracking(const std::vector<Detection>& personDetections) {
-    // 简化实现：直接返回检测结果，避免复杂的跟踪逻辑
-    return personDetections;
+    try {
+        // 获取当前摄像头的跟踪器
+        PersonTracker* tracker = g_tracker_manager.getTracker(app_ctx.camera_index);
+        if (!tracker) {
+            LOGE("❌ Camera %d 获取跟踪器失败", app_ctx.camera_index);
+            return personDetections;
+        }
+
+        // 记录跟踪开始时间
+        auto start_time = std::chrono::steady_clock::now();
+
+        // 执行跟踪更新
+        std::vector<Detection> trackedDetections = tracker->updateTracking(personDetections);
+
+        // 记录跟踪耗时
+        auto end_time = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+        // 更新性能统计
+        g_stats_collector.recordPerformanceMetric(app_ctx.camera_index, "tracking_time", duration.count());
+
+        // 每20次跟踪输出一次详细统计
+        static int tracking_counter = 0;
+        if (++tracking_counter % 20 == 0) {
+            int activeCount = tracker->getActivePersonCount();
+            int totalCount = tracker->getTotalTrackedPersons();
+
+            LOGD("🔄 Camera %d 跟踪结果: %zu检测 -> %zu跟踪, 活跃%d, 总计%d, 耗时%lldms",
+                 app_ctx.camera_index, personDetections.size(), trackedDetections.size(),
+                 activeCount, totalCount, duration.count());
+        }
+
+        return trackedDetections;
+
+    } catch (const std::exception& e) {
+        LOGE("❌ Camera %d performPersonTracking异常: %s", app_ctx.camera_index, e.what());
+        return personDetections; // 返回原始检测结果作为fallback
+    }
 }
 
 // 🔧 实现：简化的人脸分析功能
@@ -1642,18 +1679,64 @@ std::vector<FaceAnalysisResult> ZLPlayer::performFaceAnalysis(const cv::Mat& fra
     return faceResults;
 }
 
-// 🔧 实现：简化的人员统计数据更新
+// 🔧 Phase 1: 增强的人员统计数据更新
 void ZLPlayer::updatePersonStatistics(const std::vector<Detection>& trackedPersons,
                                       const std::vector<FaceAnalysisResult>& faceResults) {
-    // 简化实现：基本的统计记录
-    static int totalPersonCount = 0;
-    totalPersonCount += trackedPersons.size();
+    try {
+        // 创建增强统计数据
+        EnhancedPersonStatistics stats;
+        stats.camera_id = app_ctx.camera_index;
+        stats.current_person_count = trackedPersons.size();
 
-    // 每50次更新输出一次统计信息
-    static int updateCounter = 0;
-    if (++updateCounter % 50 == 0) {
-        LOGD("📊 Camera %d 简化统计: 当前%zu人员, 累计%d人次",
-             app_ctx.camera_index, trackedPersons.size(), totalPersonCount);
+        // 累计统计
+        static int totalPersonCount = 0;
+        totalPersonCount += trackedPersons.size();
+        stats.total_person_count = totalPersonCount;
+
+        // 获取跟踪器统计信息
+        PersonTracker* tracker = g_tracker_manager.getTracker(app_ctx.camera_index);
+        if (tracker) {
+            auto activePersons = tracker->getActivePersons();
+
+            // 分析移动状态
+            int movingCount = 0;
+            int stationaryCount = 0;
+            for (const auto& person : activePersons) {
+                if (person.isMoving(5.0f)) {
+                    movingCount++;
+                } else {
+                    stationaryCount++;
+                }
+            }
+
+            // 检测进入/离开事件（简化实现）
+            static int lastPersonCount = 0;
+            if (stats.current_person_count > lastPersonCount) {
+                stats.enter_count += (stats.current_person_count - lastPersonCount);
+            } else if (stats.current_person_count < lastPersonCount) {
+                stats.exit_count += (lastPersonCount - stats.current_person_count);
+            }
+            lastPersonCount = stats.current_person_count;
+
+            // 每50次更新输出一次详细统计
+            static int updateCounter = 0;
+            if (++updateCounter % 50 == 0) {
+                LOGD("📊 Camera %d 增强统计: 当前%d人, 累计%d人次, 移动%d, 静止%d, 进入%d, 离开%d",
+                     app_ctx.camera_index, stats.current_person_count, stats.total_person_count,
+                     movingCount, stationaryCount, stats.enter_count, stats.exit_count);
+            }
+        }
+
+        // 更新统计管理器
+        if (app_ctx.statistics_manager) {
+            app_ctx.statistics_manager->updateEnhancedStatistics(stats);
+        }
+
+        // 更新全局统计收集器
+        g_stats_collector.updateCameraStats(app_ctx.camera_index, stats);
+
+    } catch (const std::exception& e) {
+        LOGE("❌ Camera %d updatePersonStatistics异常: %s", app_ctx.camera_index, e.what());
     }
 }
 

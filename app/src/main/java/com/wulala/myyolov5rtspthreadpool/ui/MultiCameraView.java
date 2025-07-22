@@ -8,6 +8,7 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.ViewGroup;
@@ -155,14 +156,17 @@ public class MultiCameraView extends GridLayout {
             
             if (shouldUpdateStatistics) {
                 try {
-                    // 🔧 暂时注释掉C++层统计调用，避免崩溃
-                    // long startTime = System.currentTimeMillis();
-                    // lastStatistics = DirectInspireFaceTest.getCurrentStatistics();
-                    // long jniCallTime = System.currentTimeMillis() - startTime;
+                    // 🔧 Phase 1: 使用真实的JNI调用获取统计数据
+                    long startTime = System.currentTimeMillis();
+                    lastStatistics = DirectInspireFaceTest.getCurrentStatistics();
+                    long jniCallTime = System.currentTimeMillis() - startTime;
 
-                    // 🔧 使用简化的统计数据
-                    lastStatistics = createSimplifiedStatistics();
-                    long jniCallTime = 0;
+                    // 如果JNI调用失败，使用简化的统计数据作为fallback
+                    if (lastStatistics == null) {
+                        Log.w(TAG, "JNI调用返回null，使用简化统计数据");
+                        lastStatistics = createSimplifiedStatistics();
+                        jniCallTime = 0;
+                    }
                     
                     if (lastStatistics != null && lastStatistics.success) {
                         android.util.Log.d(TAG, "✅ 从C++层获取统计数据: " + lastStatistics.formatForDisplay() + 

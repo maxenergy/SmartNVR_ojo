@@ -3,11 +3,61 @@
 #include <algorithm>
 #include <sstream>
 #include <fstream>
+#include <iomanip>
 
 #define TAG "StatisticsManager"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
+
+// 🔧 Phase 1: 全局统计收集器实例定义
+StatisticsCollector g_stats_collector;
+
+// 🔧 Phase 1: StatisticsCollector实现
+void StatisticsCollector::updateCameraStats(int camera_id, const EnhancedPersonStatistics& stats) {
+    std::lock_guard<std::mutex> lock(stats_mutex);
+    camera_stats[camera_id] = stats;
+    LOGD("📊 更新Camera %d统计: 当前%d人, 累计%d人次",
+         camera_id, stats.current_person_count, stats.total_person_count);
+}
+
+EnhancedPersonStatistics StatisticsCollector::getCameraStats(int camera_id) {
+    std::lock_guard<std::mutex> lock(stats_mutex);
+    auto it = camera_stats.find(camera_id);
+    if (it != camera_stats.end()) {
+        return it->second;
+    }
+
+    // 返回默认统计数据
+    EnhancedPersonStatistics default_stats;
+    default_stats.camera_id = camera_id;
+    return default_stats;
+}
+
+std::map<int, EnhancedPersonStatistics> StatisticsCollector::getAllStats() {
+    std::lock_guard<std::mutex> lock(stats_mutex);
+    return camera_stats;
+}
+
+void StatisticsCollector::resetStats() {
+    std::lock_guard<std::mutex> lock(stats_mutex);
+    camera_stats.clear();
+    LOGD("🔄 重置所有统计数据");
+}
+
+void StatisticsCollector::recordPerformanceMetric(int camera_id, const std::string& metric, double value) {
+    std::lock_guard<std::mutex> lock(stats_mutex);
+    auto& stats = camera_stats[camera_id];
+
+    if (metric == "detection_time") {
+        // 计算移动平均
+        stats.avg_detection_time = (stats.avg_detection_time * stats.frames_processed + value) / (stats.frames_processed + 1);
+    } else if (metric == "tracking_time") {
+        stats.avg_tracking_time = (stats.avg_tracking_time * stats.frames_processed + value) / (stats.frames_processed + 1);
+    }
+
+    stats.frames_processed++;
+}
 
 StatisticsManager::StatisticsManager() {
     LOGD("StatisticsManager constructor");
@@ -311,4 +361,77 @@ int StatisticsManager::getTimeDifferenceMinutes(const std::chrono::steady_clock:
                                                const std::chrono::steady_clock::time_point& time2) {
     auto duration = std::chrono::duration_cast<std::chrono::minutes>(time2 - time1);
     return static_cast<int>(duration.count());
+}
+
+// 🔧 Phase 1: 增强接口实现
+void StatisticsManager::updateEnhancedStatistics(const EnhancedPersonStatistics& stats) {
+    try {
+        // 更新全局统计收集器
+        g_stats_collector.updateCameraStats(stats.camera_id, stats);
+
+        // 转换为原有格式并更新
+        PersonStatistics legacy_stats;
+        legacy_stats.camera_id = stats.camera_id;
+        legacy_stats.person_count = stats.current_person_count;
+        legacy_stats.timestamp = stats.last_reset;
+
+        updateStatistics(legacy_stats);
+
+        LOGD("📊 更新增强统计 Camera %d: 当前%d人, 进入%d, 离开%d",
+             stats.camera_id, stats.current_person_count, stats.enter_count, stats.exit_count);
+
+    } catch (const std::exception& e) {
+        LOGE("❌ 更新增强统计异常: %s", e.what());
+    }
+}
+
+EnhancedPersonStatistics StatisticsManager::getEnhancedStatistics(int camera_id) {
+    try {
+        return g_stats_collector.getCameraStats(camera_id);
+    } catch (const std::exception& e) {
+        LOGE("❌ 获取增强统计异常: %s", e.what());
+        EnhancedPersonStatistics default_stats;
+        default_stats.camera_id = camera_id;
+        return default_stats;
+    }
+}
+
+void StatisticsManager::recordEnterEvent(int camera_id) {
+    try {
+        auto stats = g_stats_collector.getCameraStats(camera_id);
+        stats.enter_count++;
+        g_stats_collector.updateCameraStats(camera_id, stats);
+
+        LOGD("🚪 Camera %d 记录进入事件, 累计进入: %d", camera_id, stats.enter_count);
+    } catch (const std::exception& e) {
+        LOGE("❌ 记录进入事件异常: %s", e.what());
+    }
+}
+
+void StatisticsManager::recordExitEvent(int camera_id) {
+    try {
+        auto stats = g_stats_collector.getCameraStats(camera_id);
+        stats.exit_count++;
+        g_stats_collector.updateCameraStats(camera_id, stats);
+
+        LOGD("🚪 Camera %d 记录离开事件, 累计离开: %d", camera_id, stats.exit_count);
+    } catch (const std::exception& e) {
+        LOGE("❌ 记录离开事件异常: %s", e.what());
+    }
+}
+
+void StatisticsManager::recordPerformanceMetric(int camera_id, const std::string& metric, double value) {
+    try {
+        g_stats_collector.recordPerformanceMetric(camera_id, metric, value);
+
+        // 每100次记录输出一次性能统计
+        static int record_counter = 0;
+        if (++record_counter % 100 == 0) {
+            auto stats = g_stats_collector.getCameraStats(camera_id);
+            LOGD("⚡ Camera %d 性能统计: 检测%.1fms, 跟踪%.1fms, 处理%d帧",
+                 camera_id, stats.avg_detection_time, stats.avg_tracking_time, stats.frames_processed);
+        }
+    } catch (const std::exception& e) {
+        LOGE("❌ 记录性能指标异常: %s", e.what());
+    }
 }
