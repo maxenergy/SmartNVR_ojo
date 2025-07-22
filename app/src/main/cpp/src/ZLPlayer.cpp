@@ -1559,29 +1559,53 @@ void ZLPlayer::processPersonDetectionAndFaceAnalysis(cv::Mat& frame,
 
         // 🔧 简化的人员统计（每10帧输出一次日志，避免日志过多）
         static int logCounter = 0;
-        if (++logCounter % 10 == 0) {
-            LOGD("🔍 Camera %d 检测到 %d 个人员 (frame %d)", app_ctx.camera_index, personCount, logCounter);
+        static int framesSinceLastLog = 0;
+        framesSinceLastLog++;
+
+        if (++logCounter % 10 == 0 && personCount > 0) {
+            LOGD("🔍 Camera %d 检测到 %d 个人员 (frame %d, 最近10帧中有人员)",
+                 app_ctx.camera_index, personCount, logCounter);
         }
 
         // 🔧 基本的人员跟踪（简化实现）
         if (personCount > 0) {
             // 简单的人员计数和位置记录
             static int totalPersonsSeen = 0;
+            static cv::Point2f lastPersonCenter(-1, -1); // 记录上一次检测到的人员中心位置
             totalPersonsSeen += personCount;
 
             // 记录人员位置信息（用于简单的跟踪）
             for (const auto& person : personDetections) {
+                // 计算人员中心位置
+                cv::Point2f currentCenter(
+                    person.box.x + person.box.width / 2.0f,
+                    person.box.y + person.box.height / 2.0f
+                );
+
+                // 简单的移动检测
+                bool isMoving = false;
+                if (lastPersonCenter.x >= 0 && lastPersonCenter.y >= 0) {
+                    float distance = cv::norm(currentCenter - lastPersonCenter);
+                    isMoving = distance > 10.0f; // 移动阈值：10像素
+                }
+
                 // 简化的位置记录，可以后续扩展为完整的跟踪算法
-                LOGD("📍 Camera %d 人员位置: [%.1f,%.1f,%.1f,%.1f] 置信度:%.2f",
+                LOGD("📍 Camera %d 人员位置: [%d,%d,%d,%d] 中心:(%.1f,%.1f) 置信度:%.2f %s",
                      app_ctx.camera_index,
                      person.box.x, person.box.y,
                      person.box.x + person.box.width, person.box.y + person.box.height,
-                     person.confidence);
+                     currentCenter.x, currentCenter.y,
+                     person.confidence,
+                     isMoving ? "🚶移动" : "🧍静止");
+
+                lastPersonCenter = currentCenter; // 更新位置记录
             }
 
             // 每100帧输出一次累计统计
             if (logCounter % 100 == 0) {
-                LOGD("📊 Camera %d 累计统计: 总计检测到 %d 人次", app_ctx.camera_index, totalPersonsSeen);
+                double avgPersonsPerFrame = (double)totalPersonsSeen / logCounter;
+                LOGD("📊 Camera %d 累计统计: 总计%d人次, 平均%.2f人/帧, 当前帧%d人",
+                     app_ctx.camera_index, totalPersonsSeen, avgPersonsPerFrame, personCount);
             }
         }
 
