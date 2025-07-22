@@ -217,8 +217,20 @@ public class RealYOLOInference {
         
         @Override
         public String toString() {
-            return String.format("PersonDetectionResult{success=%s, total=%d, persons=%d}", 
+            return String.format("PersonDetectionResult{success=%s, total=%d, persons=%d}",
                                success, totalDetections, personCount);
         }
     }
+
+    // 🔧 新增：实时统计数据接口
+    /**
+     * 获取实时统计数据
+     * @return 批量统计结果，包含人员统计、性别分布、年龄分布等
+     */
+    public static native BatchStatisticsResult getRealTimeStatistics();
+
+    /**
+     * 重置统计数据
+     */
+    public static native void resetStatistics();
 }

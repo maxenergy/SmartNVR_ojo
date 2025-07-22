@@ -72,16 +72,18 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         engine/yolov8_engine.cpp
         process/yolov8_postprocess.cpp
 
-        # 🚀 新增: InspireFace集成模块
-        engine/extended_inference_manager.cpp
-        face/face_analysis_manager.cpp
-        face/inspireface_wrapper.cpp
-        face/inspireface_model_manager.cpp
-        statistics/statistics_manager.cpp
-        jni/extended_inference_jni.cpp
-        jni/direct_inspireface_test_jni.cpp
-        jni/face_detection_test_jni.cpp
-        jni/real_yolo_inference_jni.cpp
+        # � 新增: InspireFace集成模块
+        # engine/extended_inference_manager.cpp
+        # face/inspireface_wrapper.cpp
+        # face/inspireface_model_manager.cpp
+        # jni/extended_inference_jni.cpp
+        # jni/direct_inspireface_test_jni.cpp
+        # jni/face_detection_test_jni.cpp
+        # jni/real_yolo_inference_jni.cpp
+
+        # �🔧 新增: 人员统计和人脸识别功能（使用我们的新实现）
+        src/face_analysis_manager.cpp
+        src/statistics_manager.cpp
         )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}

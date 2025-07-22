@@ -18,9 +18,17 @@
 #include <vector>
 #include <map>
 #include <string>
+#include <memory>
+
+// 🔧 新增: 人员统计相关头文件
+#include "person_detection_types.h"
 
 // 🔧 新增: 前向声明统一推理管理器
 class InferenceManager;
+
+// 🔧 新增: 前向声明人脸分析和统计管理器
+class FaceAnalysisManager;
+class StatisticsManager;
 
 typedef struct g_rknn_app_context_t {
     FILE *out_fp;
@@ -30,6 +38,10 @@ typedef struct g_rknn_app_context_t {
 
     // 🔧 新增: 统一推理管理器（支持YOLOv5和YOLOv8n）
     InferenceManager *inference_manager;
+
+    // 🔧 新增: 人脸分析和统计管理器
+    FaceAnalysisManager *face_analysis_manager;
+    StatisticsManager *statistics_manager;
     // MppEncoder *encoder;
     // mk_media media;
     // mk_pusher pusher;
@@ -154,6 +166,54 @@ public:
      * @return true可用，false不可用
      */
     bool isModelAvailable(int model_type);
+
+    // 🔧 新增：人员统计和人脸识别功能
+    /**
+     * @brief 处理人员检测和人脸分析
+     * @param frame 当前帧图像
+     * @param detections 检测结果
+     * @param frameData 帧数据
+     */
+    void processPersonDetectionAndFaceAnalysis(cv::Mat& frame,
+                                               const std::vector<Detection>& detections,
+                                               std::shared_ptr<frame_data_t> frameData);
+
+    /**
+     * @brief 执行人员跟踪，避免重复计数
+     * @param personDetections 人员检测结果
+     * @return 跟踪后的人员列表
+     */
+    std::vector<Detection> performPersonTracking(const std::vector<Detection>& personDetections);
+
+    /**
+     * @brief 执行人脸分析和识别
+     * @param frame 当前帧图像
+     * @param personDetections 人员检测结果
+     * @return 人脸分析结果
+     */
+    std::vector<FaceAnalysisResult> performFaceAnalysis(const cv::Mat& frame,
+                                                        const std::vector<Detection>& personDetections);
+
+    /**
+     * @brief 更新人员统计数据
+     * @param trackedPersons 跟踪的人员
+     * @param faceResults 人脸分析结果
+     */
+    void updatePersonStatistics(const std::vector<Detection>& trackedPersons,
+                               const std::vector<FaceAnalysisResult>& faceResults);
+
+    /**
+     * @brief 将结果发送到Java层
+     * @param trackedPersons 跟踪的人员
+     * @param faceResults 人脸分析结果
+     */
+    void sendResultsToJava(const std::vector<Detection>& trackedPersons,
+                          const std::vector<FaceAnalysisResult>& faceResults);
+
+    /**
+     * @brief 清理人员跟踪数据
+     */
+    void cleanupPersonTrackingData();
 };
 
 #endif //AIBOX_ZLPLAYER_H

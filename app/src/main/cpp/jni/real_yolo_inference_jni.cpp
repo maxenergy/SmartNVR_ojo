@@ -8,12 +8,18 @@
 #include "../engine/inference_manager.h"
 #include "../types/model_config.h"
 #include "../include/logging.h"
+#include "../statistics/statistics_manager.h"
+#include "../include/ZLPlayer.h"
 
 static const char* YOLO_TAG = "RealYOLOInferenceJNI";
 
 // 全局推理管理器实例
 static std::unique_ptr<InferenceManager> g_inference_manager = nullptr;
 static bool g_initialized = false;
+
+// 🔧 新增：外部统计管理器访问
+extern std::unique_ptr<StatisticsManager> g_globalStatisticsManager;
+extern std::mutex g_managerMutex;
 
 extern "C" {
 
@@ -223,8 +229,114 @@ Java_com_wulala_myyolov5rtspthreadpool_RealYOLOInference_releaseEngine(
 JNIEXPORT jboolean JNICALL
 Java_com_wulala_myyolov5rtspthreadpool_RealYOLOInference_isInitialized(
     JNIEnv *env, jclass clazz) {
-    
+
     return g_initialized && g_inference_manager != nullptr;
+}
+
+/**
+ * 🔧 新增：获取实时统计数据
+ * 高效的JNI接口，一次性返回所有统计信息
+ */
+JNIEXPORT jobject JNICALL
+Java_com_wulala_myyolov5rtspthreadpool_RealYOLOInference_getRealTimeStatistics(
+    JNIEnv *env, jclass clazz) {
+
+    try {
+        // 获取统计数据
+        StatisticsData currentStats;
+        bool hasData = false;
+
+        {
+            std::lock_guard<std::mutex> lock(g_managerMutex);
+            if (g_globalStatisticsManager) {
+                currentStats = g_globalStatisticsManager->getCurrentStatistics();
+                hasData = true;
+            }
+        }
+
+        // 创建Java对象
+        jclass resultClass = env->FindClass("com/wulala/myyolov5rtspthreadpool/BatchStatisticsResult");
+        if (!resultClass) {
+            LOGE("Failed to find BatchStatisticsResult class");
+            return nullptr;
+        }
+
+        jmethodID constructor = env->GetMethodID(resultClass, "<init>", "()V");
+        if (!constructor) {
+            LOGE("Failed to find BatchStatisticsResult constructor");
+            return nullptr;
+        }
+
+        jobject result = env->NewObject(resultClass, constructor);
+        if (!result) {
+            LOGE("Failed to create BatchStatisticsResult object");
+            return nullptr;
+        }
+
+        // 设置字段
+        jfieldID successField = env->GetFieldID(resultClass, "success", "Z");
+        jfieldID personCountField = env->GetFieldID(resultClass, "personCount", "I");
+        jfieldID maleCountField = env->GetFieldID(resultClass, "maleCount", "I");
+        jfieldID femaleCountField = env->GetFieldID(resultClass, "femaleCount", "I");
+        jfieldID totalFaceCountField = env->GetFieldID(resultClass, "totalFaceCount", "I");
+        jfieldID ageBracketsField = env->GetFieldID(resultClass, "ageBrackets", "[I");
+
+        if (hasData) {
+            env->SetBooleanField(result, successField, JNI_TRUE);
+            env->SetIntField(result, personCountField, currentStats.totalPersonCount);
+            env->SetIntField(result, maleCountField, currentStats.maleCount);
+            env->SetIntField(result, femaleCountField, currentStats.femaleCount);
+            env->SetIntField(result, totalFaceCountField, currentStats.totalFaceCount);
+
+            // 设置年龄分布数组
+            jintArray ageArray = env->NewIntArray(9);
+            if (ageArray) {
+                jint ageData[9];
+                for (int i = 0; i < 9; i++) {
+                    ageData[i] = (i < currentStats.ageBracketCounts.size()) ?
+                                currentStats.ageBracketCounts[i] : 0;
+                }
+                env->SetIntArrayRegion(ageArray, 0, 9, ageData);
+                env->SetObjectField(result, ageBracketsField, ageArray);
+                env->DeleteLocalRef(ageArray);
+            }
+
+            LOGD("RealYOLOInference: 返回统计数据 - 人员:%d, 男性:%d, 女性:%d, 人脸:%d",
+                 currentStats.totalPersonCount, currentStats.maleCount,
+                 currentStats.femaleCount, currentStats.totalFaceCount);
+        } else {
+            env->SetBooleanField(result, successField, JNI_FALSE);
+            LOGD("RealYOLOInference: 统计管理器未初始化，返回空数据");
+        }
+
+        return result;
+
+    } catch (const std::exception& e) {
+        LOGE("RealYOLOInference: getRealTimeStatistics exception: %s", e.what());
+        return nullptr;
+    } catch (...) {
+        LOGE("RealYOLOInference: getRealTimeStatistics unknown exception");
+        return nullptr;
+    }
+}
+
+/**
+ * 🔧 新增：重置统计数据
+ */
+JNIEXPORT void JNICALL
+Java_com_wulala_myyolov5rtspthreadpool_RealYOLOInference_resetStatistics(
+    JNIEnv *env, jclass clazz) {
+
+    try {
+        std::lock_guard<std::mutex> lock(g_managerMutex);
+        if (g_globalStatisticsManager) {
+            // 重新创建统计管理器实现重置
+            g_globalStatisticsManager.reset(new StatisticsManager());
+            LOGD("RealYOLOInference: 统计数据已重置");
+        }
+    } catch (const std::exception& e) {
+        LOGE("RealYOLOInference: resetStatistics exception: %s", e.what());
+    }
 }
 
 } // extern "C"
