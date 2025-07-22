@@ -72,10 +72,14 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
         engine/yolov8_engine.cpp
         process/yolov8_postprocess.cpp
 
-        # � 新增: InspireFace集成模块
-        # engine/extended_inference_manager.cpp
-        # face/inspireface_wrapper.cpp
-        # face/inspireface_model_manager.cpp
+        # 🔧 Phase 2: 重新启用InspireFace集成模块
+        face/inspireface_wrapper.cpp
+        face/inspireface_model_manager.cpp
+        engine/extended_inference_manager.cpp
+        jni/extended_inference_jni.cpp
+        jni/direct_inspireface_test_jni.cpp
+        jni/face_detection_test_jni.cpp
+        # jni/real_yolo_inference_jni.cpp  # 暂时注释，有FaceAnalysisResult冲突
         # jni/extended_inference_jni.cpp
         # jni/direct_inspireface_test_jni.cpp
         # jni/face_detection_test_jni.cpp

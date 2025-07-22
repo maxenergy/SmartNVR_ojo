@@ -366,10 +366,28 @@ ZLPlayer::ZLPlayer(char *modelFileData, int modelDataLen) {
         }
     }
 
-    // 🔧 新增: 初始化简化的管理器（暂时设为nullptr，避免复杂依赖）
-    app_ctx.face_analysis_manager = nullptr;
+    // 🔧 Phase 2: 初始化FaceAnalysisManager并测试InspireFace功能
+    try {
+        app_ctx.face_analysis_manager = new FaceAnalysisManager();
+        if (app_ctx.face_analysis_manager) {
+            LOGD("🔧 Phase 2: FaceAnalysisManager created successfully");
+
+            // 初始化基础功能
+            int init_result = app_ctx.face_analysis_manager->initialize();
+            LOGD("🔧 Phase 2: FaceAnalysisManager initialize result: %d", init_result);
+
+            // 测试InspireFace集成
+            bool test_result = app_ctx.face_analysis_manager->testInspireFaceIntegration();
+            LOGD("🔧 Phase 2: InspireFace integration test result: %s", test_result ? "PASS" : "FAIL");
+        }
+    } catch (const std::exception& e) {
+        LOGE("🔧 Phase 2: Failed to create FaceAnalysisManager: %s", e.what());
+        app_ctx.face_analysis_manager = nullptr;
+    }
+
+    // 🔧 新增: 初始化StatisticsManager
     app_ctx.statistics_manager = nullptr;
-    LOGD("Simplified managers initialized (set to nullptr for now)");
+    LOGD("🔧 Phase 2: Managers initialization completed");
 
     // app_ctx.mppDataThreadPool->setUpWithModelData(THREAD_POOL, this->modelFileContent, this->modelFileSize);
 
@@ -662,7 +680,7 @@ void ZLPlayer::get_detect_result() {
                 }
             }
             
-            LOGD("🔍 检测结果过滤: %zu -> %zu (启用类别: person, bus, truck)", 
+            LOGD("🔍 Phase 2测试: 检测结果过滤: %zu -> %zu (启用多个类别用于测试)",
                  objects.size(), filteredObjects.size());
             
             // 只绘制过滤后的检测结果
@@ -1129,10 +1147,16 @@ ZLPlayer::~ZLPlayer() {
         LOGD("Cleaned up unified inference manager");
     }
 
-    // 🔧 新增: 清理简化的管理器（已设为nullptr，无需清理）
-    app_ctx.face_analysis_manager = nullptr;
+    // 🔧 Phase 2: 清理FaceAnalysisManager
+    if (app_ctx.face_analysis_manager) {
+        LOGD("🔧 Phase 2: Releasing FaceAnalysisManager");
+        app_ctx.face_analysis_manager->release();
+        delete app_ctx.face_analysis_manager;
+        app_ctx.face_analysis_manager = nullptr;
+    }
+
     app_ctx.statistics_manager = nullptr;
-    LOGD("Simplified managers cleanup completed");
+    LOGD("🔧 Phase 2: Managers cleanup completed");
 
     // 5. 清理MPP解码器
     if (app_ctx.decoder) {
@@ -1164,15 +1188,20 @@ std::set<std::string> ZLPlayer::getEnabledClassesFromJava() {
     // 这里应该通过JNI调用获取，但为了简化实现，我们读取当前的配置
     // 用户可以通过SettingsActivity界面配置这些类别
     
-    // 默认启用的类别（从DetectionSettingsManager的默认值获取）
-    enabledClasses.insert("person");  // 默认启用人员检测
-    
-    // 🔧 注意: 用户可以通过SettingsActivity界面修改这些设置
-    // 实际的类别过滤现在由Java层的DetectionResultFilter处理
-    // native层的过滤主要用于减少绘制开销
-    
-    LOGD("📋 Native层使用的启用类别: person (默认)");
-    LOGD("💡 用户可通过设置界面配置更多类别");
+    // 🔧 Phase 2: 临时启用更多类别以便测试人脸识别功能
+    enabledClasses.insert("person");      // 人员检测
+    enabledClasses.insert("chair");       // 椅子
+    enabledClasses.insert("laptop");      // 笔记本电脑
+    enabledClasses.insert("traffic light"); // 交通灯
+    enabledClasses.insert("bus");         // 公交车
+    enabledClasses.insert("truck");       // 卡车
+    enabledClasses.insert("car");         // 汽车
+
+    // 🔧 注意: 这是为了测试Phase 2功能而临时启用的类别
+    // 实际部署时应该通过SettingsActivity界面配置
+
+    LOGD("📋 Phase 2测试: Native层启用类别: person, chair, laptop, traffic light, bus, truck, car");
+    LOGD("💡 这是为了测试人脸识别功能而临时启用的配置");
     
     return enabledClasses;
 }

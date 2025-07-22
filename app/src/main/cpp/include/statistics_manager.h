@@ -5,7 +5,18 @@
 #include <map>
 #include <mutex>
 #include <chrono>
+#include <string>
+#include <sstream>
 #include "person_detection_types.h"
+
+// 🔧 Phase 2: 统计配置结构
+struct StatisticsConfig {
+    bool enableGenderStatistics = true;
+    bool enableAgeStatistics = true;
+    bool enableRaceStatistics = false;
+    int maxHistoryRecords = 10000;
+    int statisticsUpdateInterval = 1000; // ms
+};
 
 // 🔧 Phase 1: 增强的统计数据结构
 struct EnhancedPersonStatistics {
@@ -171,18 +182,71 @@ public:
      */
     void recordPerformanceMetric(int camera_id, const std::string& metric, double value);
 
+    // 🔧 Phase 2: 添加extended_inference_manager.cpp需要的方法
+    /**
+     * @brief 增加帧计数
+     */
+    void incrementFrameCount();
+
+    /**
+     * @brief 增加分析计数
+     */
+    void incrementAnalysisCount();
+
+    /**
+     * @brief 使用人脸分析结果更新统计
+     * @param faceResults 人脸分析结果
+     */
+    void updateStatistics(const std::vector<FaceAnalysisResult>& faceResults);
+
+    /**
+     * @brief 获取当前统计数据
+     * @return 当前统计数据
+     */
+    PersonStatistics getCurrentStatistics() const;
+
+    /**
+     * @brief 设置统计配置
+     * @param config 配置参数
+     */
+    void setConfig(const StatisticsConfig& config);
+
+    /**
+     * @brief 重置当前统计数据
+     */
+    void resetCurrentStatistics();
+
+    /**
+     * @brief 导出当前统计数据
+     * @return 统计数据字符串
+     */
+    std::string exportCurrentStatistics() const;
+
 private:
-    std::mutex mutex_;
-    
+    mutable std::mutex mutex_;  // 添加mutable以支持const方法
+
     // 当前统计数据（按摄像头ID索引）
     std::map<int, PersonStatistics> current_statistics_;
-    
+
     // 历史统计数据
     std::vector<PersonStatistics> history_statistics_;
-    
+
     // 区域统计数据
     std::map<int, AreaStatistics> area_statistics_;
-    
+
+    // 🔧 Phase 2: 添加extended_inference_manager.cpp需要的成员变量
+    int frame_count_;
+    int analysis_count_;
+    int person_count_;
+    int face_analysis_count_;
+    int male_count_;
+    int female_count_;
+    int age_group_0_18_;
+    int age_group_19_35_;
+    int age_group_36_60_;
+    int age_group_60_plus_;
+    StatisticsConfig config_;
+
     // 最大历史记录数量
     static const size_t MAX_HISTORY_RECORDS = 10000;
     

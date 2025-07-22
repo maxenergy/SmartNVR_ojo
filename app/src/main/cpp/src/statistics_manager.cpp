@@ -59,8 +59,11 @@ void StatisticsCollector::recordPerformanceMetric(int camera_id, const std::stri
     stats.frames_processed++;
 }
 
-StatisticsManager::StatisticsManager() {
-    LOGD("StatisticsManager constructor");
+StatisticsManager::StatisticsManager() :
+    frame_count_(0), analysis_count_(0), person_count_(0), face_analysis_count_(0),
+    male_count_(0), female_count_(0), age_group_0_18_(0), age_group_19_35_(0),
+    age_group_36_60_(0), age_group_60_plus_(0) {
+    LOGD("🔧 Phase 2: StatisticsManager constructor with enhanced initialization");
 }
 
 StatisticsManager::~StatisticsManager() {
@@ -434,4 +437,114 @@ void StatisticsManager::recordPerformanceMetric(int camera_id, const std::string
     } catch (const std::exception& e) {
         LOGE("❌ 记录性能指标异常: %s", e.what());
     }
+}
+
+// 🔧 Phase 2: 添加extended_inference_manager.cpp需要的StatisticsManager方法
+void StatisticsManager::incrementFrameCount() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    frame_count_++;
+    LOGD("🔧 Phase 2: Frame count incremented to %d", frame_count_);
+}
+
+void StatisticsManager::incrementAnalysisCount() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    analysis_count_++;
+    LOGD("🔧 Phase 2: Analysis count incremented to %d", analysis_count_);
+}
+
+void StatisticsManager::updateStatistics(const std::vector<FaceAnalysisResult>& faceResults) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    LOGD("🔧 Phase 2: Updating statistics with %zu face results", faceResults.size());
+
+    // 更新人脸统计
+    for (const auto& face : faceResults) {
+        if (face.face_detected) {
+            face_analysis_count_++;
+
+            // 统计性别
+            if (face.gender == 0) {
+                male_count_++;
+            } else {
+                female_count_++;
+            }
+
+            // 统计年龄组
+            if (face.age <= 18) {
+                age_group_0_18_++;
+            } else if (face.age <= 35) {
+                age_group_19_35_++;
+            } else if (face.age <= 60) {
+                age_group_36_60_++;
+            } else {
+                age_group_60_plus_++;
+            }
+        }
+    }
+
+    LOGD("🔧 Phase 2: Statistics updated - faces: %d, male: %d, female: %d",
+         face_analysis_count_, male_count_, female_count_);
+}
+
+PersonStatistics StatisticsManager::getCurrentStatistics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    PersonStatistics stats = {};
+    stats.camera_id = -1; // 全局统计
+    stats.person_count = person_count_;
+    stats.face_count = face_analysis_count_;
+    stats.male_count = male_count_;
+    stats.female_count = female_count_;
+    stats.age_group_0_18 = age_group_0_18_;
+    stats.age_group_19_35 = age_group_19_35_;
+    stats.age_group_36_60 = age_group_36_60_;
+    stats.age_group_60_plus = age_group_60_plus_;
+    stats.timestamp = std::chrono::steady_clock::now();
+
+    LOGD("🔧 Phase 2: Getting current statistics - %d persons, %d faces",
+         stats.person_count, stats.face_count);
+
+    return stats;
+}
+
+void StatisticsManager::setConfig(const StatisticsConfig& config) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    config_ = config;
+    LOGD("🔧 Phase 2: Statistics config updated");
+}
+
+void StatisticsManager::resetCurrentStatistics() {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    frame_count_ = 0;
+    analysis_count_ = 0;
+    person_count_ = 0;
+    face_analysis_count_ = 0;
+    male_count_ = 0;
+    female_count_ = 0;
+    age_group_0_18_ = 0;
+    age_group_19_35_ = 0;
+    age_group_36_60_ = 0;
+    age_group_60_plus_ = 0;
+
+    LOGD("🔧 Phase 2: Current statistics reset");
+}
+
+std::string StatisticsManager::exportCurrentStatistics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    std::ostringstream oss;
+    oss << "Statistics Export:\n";
+    oss << "Frames: " << frame_count_ << "\n";
+    oss << "Analysis: " << analysis_count_ << "\n";
+    oss << "Persons: " << person_count_ << "\n";
+    oss << "Faces: " << face_analysis_count_ << "\n";
+    oss << "Male: " << male_count_ << ", Female: " << female_count_ << "\n";
+    oss << "Age Groups: 0-18=" << age_group_0_18_ << ", 19-35=" << age_group_19_35_
+        << ", 36-60=" << age_group_36_60_ << ", 60+=" << age_group_60_plus_;
+
+    std::string result = oss.str();
+    LOGD("🔧 Phase 2: Exporting statistics: %s", result.c_str());
+
+    return result;
 }

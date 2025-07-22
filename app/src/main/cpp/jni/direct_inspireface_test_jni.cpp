@@ -649,7 +649,9 @@ static JNIPerformanceMonitor g_jniMonitor;
 
 /**
  * 获取当前统计数据（从C++层StatisticsManager）
+ * 🔧 Phase 2: 暂时注释，使用enhanced_statistics_jni.cpp中的实现
  */
+/*
 JNIEXPORT jobject JNICALL
 Java_com_wulala_myyolov5rtspthreadpool_DirectInspireFaceTest_getCurrentStatistics(
     JNIEnv* env, jobject thiz) {
@@ -766,20 +768,24 @@ Java_com_wulala_myyolov5rtspthreadpool_DirectInspireFaceTest_getCurrentStatistic
         return nullptr;
     }
 }
+*/
 
 /**
  * 重置统计数据
+ * 🔧 Phase 2: 暂时注释，使用enhanced_statistics_jni.cpp中的实现
  */
+/*
 JNIEXPORT void JNICALL
 Java_com_wulala_myyolov5rtspthreadpool_DirectInspireFaceTest_resetStatistics(
     JNIEnv* env, jobject thiz) {
-    
+
     LOGD("🔧 重置C++层统计数据");
-    
+
     g_lastStatisticsResult = BatchStatisticsResult();
     g_lastFaceAnalysisResult = FaceAnalysisNativeResult();
-    
+
     LOGD("✅ 统计数据已重置");
 }
+*/
 
 } // extern "C"

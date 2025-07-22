@@ -134,12 +134,30 @@ public class MainActivity extends AppCompatActivity {
 
         // 🔧 自动启用AI分析功能（用于调试和演示）
         // 延迟启用，确保UI完全初始化
+        android.util.Log.d(TAG, "🔧 Phase 2: 准备设置延迟Handler");
         new android.os.Handler().postDelayed(() -> {
+            android.util.Log.d(TAG, "🔧 Phase 2: Handler延迟执行开始");
+
             if (!aiAnalysisEnabled) {
                 android.util.Log.d(TAG, "🔧 自动启用AI分析功能");
                 toggleAIAnalysis();
+            } else {
+                android.util.Log.d(TAG, "🔧 AI分析功能已启用，跳过自动启用");
             }
+
+            // 🔧 Phase 2: 延迟触发InspireFace初始化（确保应用完全启动）
+            android.util.Log.d(TAG, "🔧 Phase 2: 开始延迟触发InspireFace初始化");
+            try {
+                initializeInspireFaceIndependent();
+                android.util.Log.d(TAG, "🔧 Phase 2: initializeInspireFaceIndependent调用完成");
+            } catch (Exception e) {
+                android.util.Log.e(TAG, "🔧 Phase 2: initializeInspireFaceIndependent调用异常", e);
+            }
+
+            android.util.Log.d(TAG, "🔧 Phase 2: Handler延迟执行完成");
         }, 2000); // 2秒后自动启用
+
+        android.util.Log.d(TAG, "🔧 Phase 2: Handler设置完成，等待延迟执行");
     }
 
     @Override
@@ -589,8 +607,142 @@ public class MainActivity extends AppCompatActivity {
         try {
             aiManager = IntegratedAIManager.getInstance();
             android.util.Log.d(TAG, "AI分析管理器初始化完成");
+
+            // 🔧 Phase 2: 初始化InspireFace功能
+            initializeInspireFace();
+
         } catch (Exception e) {
             android.util.Log.e(TAG, "AI分析管理器初始化失败", e);
+        }
+    }
+
+    /**
+     * 🔧 Phase 2: 独立的InspireFace初始化（与RTSP流处理分离）
+     */
+    private void initializeInspireFaceIndependent() {
+        android.util.Log.d(TAG, "🔧 Phase 2: ===== 开始独立的InspireFace初始化过程 =====");
+
+        // 🔧 Phase 2: 使用完全独立的线程，避免与RTSP处理冲突
+        Thread inspireFaceThread = new Thread(() -> {
+            try {
+                android.util.Log.d(TAG, "🔧 Phase 2: InspireFace独立线程启动成功");
+                android.util.Log.d(TAG, "🔧 Phase 2: 线程名称: " + Thread.currentThread().getName());
+
+                // 等待更长时间，确保RTSP流稳定
+                android.util.Log.d(TAG, "🔧 Phase 2: 等待5秒确保RTSP流稳定...");
+                Thread.sleep(5000);
+                android.util.Log.d(TAG, "🔧 Phase 2: 等待完成，开始InspireFace库初始化");
+
+                String internalDataPath = getFilesDir().getAbsolutePath();
+                android.util.Log.d(TAG, "🔧 Phase 2: 内部数据路径: " + internalDataPath);
+                android.util.Log.d(TAG, "🔧 Phase 2: Assets管理器: " + getAssets());
+
+                // 🔧 Phase 2: 分步初始化，增加错误恢复
+                android.util.Log.d(TAG, "🔧 Phase 2: 调用initializeInspireFaceWithRetry...");
+                int result = initializeInspireFaceWithRetry(internalDataPath, 3);
+                android.util.Log.d(TAG, "🔧 Phase 2: initializeInspireFaceWithRetry返回结果: " + result);
+
+                if (result == 0) {
+                    android.util.Log.d(TAG, "🔧 Phase 2: ✅ InspireFace初始化成功！");
+                } else {
+                    android.util.Log.e(TAG, "🔧 Phase 2: ❌ InspireFace初始化失败，错误码: " + result);
+                }
+
+            } catch (Exception e) {
+                android.util.Log.e(TAG, "🔧 Phase 2: InspireFace独立初始化异常", e);
+            }
+        }, "InspireFace-Init-Thread");
+
+        // 设置为守护线程，避免阻塞应用退出
+        inspireFaceThread.setDaemon(true);
+        inspireFaceThread.start();
+
+        android.util.Log.d(TAG, "🔧 Phase 2: InspireFace独立初始化线程已启动");
+    }
+
+    /**
+     * 🔧 Phase 2: 带重试机制的InspireFace初始化
+     */
+    private int initializeInspireFaceWithRetry(String internalDataPath, int maxRetries) {
+        android.util.Log.d(TAG, "🔧 Phase 2: ===== 开始带重试的InspireFace初始化 =====");
+        android.util.Log.d(TAG, "🔧 Phase 2: 最大重试次数: " + maxRetries);
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            android.util.Log.d(TAG, "🔧 Phase 2: InspireFace初始化尝试 " + attempt + "/" + maxRetries);
+
+            try {
+                android.util.Log.d(TAG, "🔧 Phase 2: 调用JNI方法 EnhancedStatisticsJNI.initializeInspireFace");
+                android.util.Log.d(TAG, "🔧 Phase 2: 参数 - Assets: " + getAssets() + ", Path: " + internalDataPath);
+
+                int result = EnhancedStatisticsJNI.initializeInspireFace(getAssets(), internalDataPath);
+                android.util.Log.d(TAG, "🔧 Phase 2: JNI调用返回结果: " + result);
+
+                if (result == 0) {
+                    android.util.Log.d(TAG, "🔧 Phase 2: ✅ InspireFace初始化成功（尝试 " + attempt + "）");
+                    return 0;
+                } else {
+                    android.util.Log.w(TAG, "🔧 Phase 2: InspireFace初始化失败（尝试 " + attempt + "），错误码: " + result);
+                }
+
+            } catch (Exception e) {
+                android.util.Log.e(TAG, "🔧 Phase 2: InspireFace初始化异常（尝试 " + attempt + "）", e);
+            }
+
+            // 如果不是最后一次尝试，等待后重试
+            if (attempt < maxRetries) {
+                try {
+                    Thread.sleep(2000); // 等待2秒后重试
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+
+        android.util.Log.e(TAG, "🔧 Phase 2: ❌ InspireFace初始化失败，已尝试 " + maxRetries + " 次");
+        return -1;
+    }
+
+    /**
+     * 🔧 Phase 2: 初始化InspireFace功能（原方法保留）
+     */
+    private void initializeInspireFace() {
+        // 🔧 Phase 2: 添加InspireFace功能开关（重新启用测试修复后的初始化）
+        boolean enableInspireFace = true; // 重新启用，测试修复后的InspireFace库初始化
+
+        if (!enableInspireFace) {
+            android.util.Log.d(TAG, "🔧 Phase 2: InspireFace功能已禁用，跳过初始化");
+            return;
+        }
+
+        try {
+            android.util.Log.d(TAG, "🔧 Phase 2: 开始初始化InspireFace");
+
+            // 获取应用内部数据路径
+            String internalDataPath = getFilesDir().getAbsolutePath();
+            android.util.Log.d(TAG, "🔧 Phase 2: 内部数据路径: " + internalDataPath);
+
+            // 延迟初始化，避免在主线程阻塞
+            new Thread(() -> {
+                try {
+                    android.util.Log.d(TAG, "🔧 Phase 2: 在后台线程中初始化InspireFace");
+
+                    // 调用JNI方法初始化InspireFace
+                    int result = EnhancedStatisticsJNI.initializeInspireFace(getAssets(), internalDataPath);
+
+                    if (result == 0) {
+                        android.util.Log.d(TAG, "🔧 Phase 2: ✅ InspireFace初始化成功");
+                    } else {
+                        android.util.Log.e(TAG, "🔧 Phase 2: ❌ InspireFace初始化失败，错误码: " + result);
+                    }
+
+                } catch (Exception e) {
+                    android.util.Log.e(TAG, "🔧 Phase 2: ❌ InspireFace后台初始化异常", e);
+                }
+            }).start();
+
+        } catch (Exception e) {
+            android.util.Log.e(TAG, "🔧 Phase 2: ❌ InspireFace初始化异常", e);
         }
     }
 

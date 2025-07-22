@@ -51,6 +51,9 @@ private:
     bool m_initialized;
     std::string m_modelPath;
     std::unique_ptr<InspireFaceModelManager> m_modelManager;
+
+    // 🔧 Phase 2: 添加模型文件验证方法
+    bool verifyModelFilesDeployment() const;
 };
 
 /**
